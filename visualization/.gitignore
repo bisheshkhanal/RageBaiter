@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+SKILL.md
+INSTRUCTIONS.md
+user_db.json
+*.local
+.DS_Store
