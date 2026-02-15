@@ -319,11 +319,37 @@ const getEngagementMetrics = (
   };
 };
 
+const deriveFallbackTweetId = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
+  const text = getTweetText(tweetElement, tweetSelectors);
+  const author = getAuthorHandle(tweetElement, tweetSelectors);
+  const timestamp = getTimestamp(tweetElement, tweetSelectors);
+
+  const parts = [author, timestamp, text.slice(0, 50)].filter(Boolean);
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  const composite = parts.join("|");
+  let hash = 0;
+  for (let i = 0; i < composite.length; i++) {
+    const char = composite.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+
+  return `fallback_${Math.abs(hash)}`;
+};
+
 export const extractTweetPayload = (
   tweetElement: HTMLElement,
   tweetSelectors: string[] = DEFAULT_TWEET_SELECTORS
 ): TweetScrapePayload | null => {
-  const tweetId = getTweetId(tweetElement, tweetSelectors);
+  let tweetId = getTweetId(tweetElement, tweetSelectors);
+
+  if (!tweetId) {
+    tweetId = deriveFallbackTweetId(tweetElement, tweetSelectors);
+  }
 
   if (!tweetId) {
     return null;
@@ -591,6 +617,13 @@ export const startTwitterScraper = (): ScraperController => {
     }
 
     observedTweetElements.add(tweetElement);
+
+    // Immediate-processing fallback: attempt to process right away
+    // in case IntersectionObserver callback does not fire promptly.
+    // Dedupe guards (processedTweetIds, dataset.ragebaiterProcessed) prevent duplicates.
+    processTweetElement(tweetElement);
+
+    // Keep IntersectionObserver path for current architecture compatibility.
     intersectionObserver.observe(tweetElement);
   };
 
@@ -660,8 +693,6 @@ export const startTwitterScraper = (): ScraperController => {
 
     if (tweets.length === 0) {
       emitSelectorMissTelemetry(tweetSelectors, "initial-scan-no-match");
-      setScraperDisabledDebugFlag(true);
-      stop();
       return;
     }
 
@@ -770,11 +801,7 @@ const checkAndInitialize = async (): Promise<void> => {
   }
 };
 
-if (
-  typeof window !== "undefined" &&
-  typeof document !== "undefined" &&
-  /(^|\.)x\.com$|(^|\.)twitter\.com$/.test(window.location.hostname)
-) {
+if (typeof window !== "undefined" && typeof document !== "undefined") {
   void checkAndInitialize();
 }
 

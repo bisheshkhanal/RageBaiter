@@ -64,7 +64,7 @@ type GeminiAnalyzerOptions = {
   logger?: GeminiAnalyzerLogger;
 };
 
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_MAX_INPUT_CHARS = 2_000;
 const DEFAULT_TIMEOUT_MS = 8_000;
 const MAX_ATTEMPTS = 3;
@@ -413,12 +413,13 @@ export const createGeminiTweetAnalyzer = (options: GeminiAnalyzerOptions = {}) =
   const maxInputChars = options.maxInputChars ?? DEFAULT_MAX_INPUT_CHARS;
   const timeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
   const rateLimiter = options.rateLimiter ?? sharedRateLimiter;
-  const apiKey = options.apiKey ?? readEnv("GEMINI_API_KEY") ?? "";
 
   return async (
     _tweetId: string,
     tweetText: string
   ): Promise<Omit<TweetAnalysis, "analyzedAt" | "expiresAt"> | null> => {
+    const apiKey = (options.apiKey ?? readEnv("GEMINI_API_KEY") ?? "").trim();
+
     const trimmedText = tweetText.trim();
     if (trimmedText.length === 0) {
       return null;

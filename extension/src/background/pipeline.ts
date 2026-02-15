@@ -251,25 +251,68 @@ export class PipelineOrchestrator {
 
     const profile = await this._deps.getUserProfile();
     const decision = this._deps.evaluateTweet(tweetAnalysis, profile);
+    const analysisSummary = `Topic: ${analysis.topic}. Fallacies: ${
+      analysis.fallacies.length > 0 ? analysis.fallacies.join(", ") : "None detected"
+    }. Confidence: ${Math.round(analysis.confidence * 100)}%.`;
 
-    if (!decision.shouldIntervene) {
+    const isDemoHost = (() => {
+      if (!input.tabUrl) {
+        return false;
+      }
+
+      try {
+        const parsed = new URL(input.tabUrl);
+        return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      } catch {
+        return false;
+      }
+    })();
+
+    const forceDemoIntervention = isDemoHost && !decision.shouldIntervene;
+    const interventionLevel = forceDemoIntervention ? "low" : decision.level;
+    const interventionReason = forceDemoIntervention ? analysisSummary : decision.action;
+
+    if (!decision.shouldIntervene && !forceDemoIntervention) {
       return { tweetId: input.tweetId, stage: "decision", decision };
     }
 
     try {
       await this._deps.sendInterventionToTab(input.tabId, {
         tweetId: input.tweetId,
-        level: decision.level,
-        reason: decision.action,
+        level: interventionLevel,
+        reason: interventionReason,
         tweetVector: analysis.tweetVector,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[RageBaiter][Pipeline] Injection failed for ${input.tweetId}:`, message);
-      return { tweetId: input.tweetId, stage: "decision", decision, error: message };
+      return {
+        tweetId: input.tweetId,
+        stage: "decision",
+        decision: forceDemoIntervention
+          ? {
+              ...decision,
+              level: "low",
+              shouldIntervene: true,
+              action: "DEMO_PREVIEW",
+            }
+          : decision,
+        error: message,
+      };
     }
 
-    return { tweetId: input.tweetId, stage: "injected", decision };
+    return {
+      tweetId: input.tweetId,
+      stage: "injected",
+      decision: forceDemoIntervention
+        ? {
+            ...decision,
+            level: "low",
+            shouldIntervene: true,
+            action: "DEMO_PREVIEW",
+          }
+        : decision,
+    };
   }
 }
 

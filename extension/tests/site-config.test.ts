@@ -4,6 +4,7 @@ import {
   getSiteForUrl,
   updateSiteEnabled,
   toggleGlobalEnabled,
+  matchesUrlPattern,
   DEFAULT_SITE_CONFIG,
   type SiteConfiguration,
 } from "../src/lib/site-config.js";
@@ -205,5 +206,31 @@ describe("Content Script Gating Simulation", () => {
     }
 
     expect(interventionSent).not.toHaveBeenCalled();
+  });
+});
+
+describe("Localhost Port Matching for Demo Scraping", () => {
+  it("matches localhost with port when pattern has no explicit port", () => {
+    expect(matchesUrlPattern("http://localhost:3001/demo", ["http://localhost/*"])).toBe(true);
+    expect(matchesUrlPattern("http://localhost:5173/page", ["http://localhost/*"])).toBe(true);
+  });
+
+  it("matches 127.0.0.1 with port when pattern has no explicit port", () => {
+    expect(matchesUrlPattern("http://127.0.0.1:5173/demo", ["http://127.0.0.1/*"])).toBe(true);
+    expect(matchesUrlPattern("http://127.0.0.1:3001/page", ["http://127.0.0.1/*"])).toBe(true);
+  });
+
+  it("matches localhost without port when pattern has no explicit port", () => {
+    expect(matchesUrlPattern("http://localhost/demo", ["http://localhost/*"])).toBe(true);
+  });
+
+  it("does not match when ports differ and pattern specifies explicit port", () => {
+    expect(matchesUrlPattern("http://localhost:8080/demo", ["http://localhost:3000/*"])).toBe(
+      false
+    );
+  });
+
+  it("matches when ports match and pattern specifies explicit port", () => {
+    expect(matchesUrlPattern("http://localhost:3000/demo", ["http://localhost:3000/*"])).toBe(true);
   });
 });
