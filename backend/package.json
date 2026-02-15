@@ -1,0 +1,15 @@
+{
+  "name": "@ragebaiter/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "node -e \"console.log('backend tests placeholder')\"",
+    "test:unit": "node -e \"console.log('backend unit tests placeholder')\"",
+    "test:integration": "node -e \"console.log('backend integration tests placeholder')\"",
+    "test:e2e": "node -e \"console.log('backend e2e tests placeholder')\""
+  }
+}
