@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "noEmit": true,
+    "types": ["node", "vitest/globals", "playwright"]
+  },
+  "include": [
+    "__tests__/**/*.ts",
+    "backend/vitest.config.ts",
+    "shared/vitest.config.ts",
+    "extension/vitest.config.ts",
+    "extension/playwright.config.ts",
+    "extension/e2e/**/*.ts",
+    "extension/tests/**/*.ts",
+    "vitest.workspace.ts"
+  ]
+}

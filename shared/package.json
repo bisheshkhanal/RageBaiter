@@ -7,9 +7,9 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "node -e \"console.log('shared tests placeholder')\"",
-    "test:unit": "node -e \"console.log('shared unit tests placeholder')\"",
-    "test:integration": "node -e \"console.log('shared integration tests placeholder')\"",
-    "test:e2e": "node -e \"console.log('shared e2e tests placeholder')\""
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "vitest run --config vitest.config.ts --passWithNoTests",
+    "test:integration": "vitest run --config vitest.config.ts \"src/**/*.integration.test.ts\" --passWithNoTests",
+    "test:e2e": "vitest run --config vitest.config.ts \"src/**/*.e2e.test.ts\" --passWithNoTests"
   }
 }
