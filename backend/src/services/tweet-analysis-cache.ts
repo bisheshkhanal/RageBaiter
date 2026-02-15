@@ -10,6 +10,12 @@ export type TweetAnalysis = {
   fallacies: string[];
   topic: string;
   confidence: number;
+  counterArgument?: string;
+  logicFailure?: string;
+  claim?: string;
+  mechanism?: string;
+  dataCheck?: string;
+  socraticChallenge?: string;
   analyzedAt: number;
   expiresAt: number;
 };

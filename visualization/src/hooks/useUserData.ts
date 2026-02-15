@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from "react";
+import { demoAuthToken, supabase } from "../lib/supabase";
 import type {
   SupabaseUserRow,
   SupabaseFeedbackRow,
@@ -7,13 +7,59 @@ import type {
   UserData,
   HistoryEntry,
   VectorSnapshot,
-} from '../types';
-import { fallacyRageScore } from '../types';
+} from "../types";
+import { fallacyRageScore } from "../types";
 
-const SUPABASE_USER_ID = 1; // row id to watch
+const DEFAULT_USER_ID = 1;
+const FALLBACK_USER_ID = Number(import.meta.env.VITE_SUPABASE_FALLBACK_USER_ID ?? DEFAULT_USER_ID);
 
-function rowToVector(row: { vector_economic: number; vector_social: number; vector_populist: number }): VectorSnapshot {
-  return { economic: row.vector_economic, social: row.vector_social, populist: row.vector_populist };
+function decodeBase64Url(value: string): string {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const remainder = normalized.length % 4;
+  const padded = remainder === 0 ? normalized : `${normalized}${"=".repeat(4 - remainder)}`;
+  return atob(padded);
+}
+
+function decodeAuthIdFromToken(rawToken: string): string | null {
+  const token = rawToken.trim().replace(/^Bearer\s+/i, "");
+  if (!token) {
+    return null;
+  }
+
+  const parts = token.split(".");
+  if (parts.length < 2 || !parts[1]) {
+    return null;
+  }
+
+  try {
+    const payloadJson = decodeBase64Url(parts[1]);
+    const payload = JSON.parse(payloadJson) as { sub?: unknown };
+    return typeof payload.sub === "string" && payload.sub.length > 0 ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+function getTokenFromUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("token") ?? params.get("authToken") ?? "";
+}
+
+function getResolvedAuthId(): string | null {
+  const urlToken = getTokenFromUrl();
+  return decodeAuthIdFromToken(urlToken || demoAuthToken);
+}
+
+function rowToVector(row: {
+  vector_economic: number;
+  vector_social: number;
+  vector_populist: number;
+}): VectorSnapshot {
+  return {
+    economic: row.vector_economic,
+    social: row.vector_social,
+    populist: row.vector_populist,
+  };
 }
 
 /** Build history entries by joining feedback with analyzed tweets */
@@ -21,11 +67,11 @@ function buildHistory(
   feedback: SupabaseFeedbackRow[],
   tweetsMap: Map<string, SupabaseTweetRow>,
   startVec: VectorSnapshot,
-  endVec: VectorSnapshot,
+  endVec: VectorSnapshot
 ): HistoryEntry[] {
   // Sort feedback chronologically
   const sorted = [...feedback].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
   const entries: HistoryEntry[] = [];
@@ -73,20 +119,26 @@ export function useUserData() {
   async function fetchAll() {
     if (!supabase) return;
 
-    // Fetch all three in parallel
-    const [userRes, feedbackRes, tweetsRes] = await Promise.all([
-      supabase.from('users').select('*').eq('id', SUPABASE_USER_ID).single(),
-      supabase.from('user_feedback').select('*').eq('user_id', SUPABASE_USER_ID),
-      supabase.from('analyzed_tweets').select('*'),
-    ]);
+    const authId = getResolvedAuthId();
+    const userQuery = authId
+      ? supabase.from("users").select("*").eq("auth_id", authId)
+      : supabase.from("users").select("*").eq("id", FALLBACK_USER_ID);
+
+    const userRes = await userQuery.single();
 
     if (userRes.error || !userRes.data) {
-      console.error('Failed to fetch user:', userRes.error?.message);
+      console.error("Failed to fetch user:", userRes.error?.message);
       setLoading(false);
       return;
     }
 
     const user = userRes.data as SupabaseUserRow;
+
+    // Fetch all three in parallel
+    const [feedbackRes, tweetsRes] = await Promise.all([
+      supabase.from("user_feedback").select("*").eq("user_id", user.id),
+      supabase.from("analyzed_tweets").select("*"),
+    ]);
     const feedback = (feedbackRes.data || []) as SupabaseFeedbackRow[];
     const tweets = (tweetsRes.data || []) as SupabaseTweetRow[];
 
@@ -102,14 +154,18 @@ export function useUserData() {
     const history = buildHistory(feedback, tweetsMap, startVec, currentVec);
 
     // Compute echo chamber depth: distance from origin normalized
-    const mag = Math.sqrt(currentVec.economic ** 2 + currentVec.social ** 2 + currentVec.populist ** 2);
+    const mag = Math.sqrt(
+      currentVec.economic ** 2 + currentVec.social ** 2 + currentVec.populist ** 2
+    );
 
     // Compute drift velocity from last two history points
     let driftVel = 0;
     if (history.length >= 2) {
       const a = history[history.length - 2].user_vector_snapshot;
       const b = history[history.length - 1].user_vector_snapshot;
-      driftVel = Math.sqrt((b.economic - a.economic) ** 2 + (b.social - a.social) ** 2 + (b.populist - a.populist) ** 2);
+      driftVel = Math.sqrt(
+        (b.economic - a.economic) ** 2 + (b.social - a.social) ** 2 + (b.populist - a.populist) ** 2
+      );
     }
 
     setData({
@@ -119,8 +175,8 @@ export function useUserData() {
       statistics: {
         total_tweets_analyzed: tweets.length,
         rage_bait_encounters: tweets.filter((t) => (t.fallacies || []).length > 0).length,
-        baits_taken: feedback.filter((f) => f.feedback_type === 'agreed').length,
-        lines_cut: feedback.filter((f) => f.feedback_type === 'dismissed').length,
+        baits_taken: feedback.filter((f) => f.feedback_type === "agreed").length,
+        lines_cut: feedback.filter((f) => f.feedback_type === "dismissed").length,
         echo_chamber_depth: Math.min(1, mag / 1.73),
       },
       current_vector: { ...currentVec, drift_velocity: parseFloat(driftVel.toFixed(3)) },

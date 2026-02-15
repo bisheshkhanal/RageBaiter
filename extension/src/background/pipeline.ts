@@ -42,6 +42,12 @@ type BackendAnalyzeResponse = {
     fallacies: string[];
     topic: string;
     confidence: number;
+    counter_argument?: string;
+    logic_failure?: string;
+    claim?: string;
+    mechanism?: string;
+    data_check?: string;
+    socratic_challenge?: string;
     analyzed_at: string;
     expires_at: string;
   } | null;
@@ -147,6 +153,12 @@ export type PipelineDeps = {
       tweetId: string;
       level: string;
       reason: string;
+      counterArgument?: string | undefined;
+      logicFailure?: string | undefined;
+      claim?: string | undefined;
+      mechanism?: string | undefined;
+      dataCheck?: string | undefined;
+      socraticChallenge?: string | undefined;
       tweetVector?: PoliticalVectorPayload;
     },
     messageId?: string
@@ -281,6 +293,12 @@ export class PipelineOrchestrator {
         tweetId: input.tweetId,
         level: interventionLevel,
         reason: interventionReason,
+        counterArgument: analysis.counterArgument,
+        logicFailure: analysis.logicFailure,
+        claim: analysis.claim,
+        mechanism: analysis.mechanism,
+        dataCheck: analysis.dataCheck,
+        socraticChallenge: analysis.socraticChallenge,
         tweetVector: analysis.tweetVector,
       });
     } catch (error) {
@@ -355,6 +373,12 @@ export const createBackendFetcher = (
         confidence: data.analysis.confidence,
         tweetVector: data.analysis.tweet_vector,
         fallacies: data.analysis.fallacies,
+        counterArgument: data.analysis.counter_argument,
+        logicFailure: data.analysis.logic_failure,
+        claim: data.analysis.claim,
+        mechanism: data.analysis.mechanism,
+        dataCheck: data.analysis.data_check,
+        socraticChallenge: data.analysis.socratic_challenge,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

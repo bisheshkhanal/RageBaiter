@@ -514,6 +514,12 @@ const pipeline = new PipelineOrchestrator({
       tweetId: payload.tweetId,
       level: payload.level as "none" | "low" | "medium" | "critical",
       reason: payload.reason,
+      ...(payload.counterArgument ? { counterArgument: payload.counterArgument } : {}),
+      ...(payload.logicFailure ? { logicFailure: payload.logicFailure } : {}),
+      ...(payload.claim ? { claim: payload.claim } : {}),
+      ...(payload.mechanism ? { mechanism: payload.mechanism } : {}),
+      ...(payload.dataCheck ? { dataCheck: payload.dataCheck } : {}),
+      ...(payload.socraticChallenge ? { socraticChallenge: payload.socraticChallenge } : {}),
       ...(payload.tweetVector ? { tweetVector: payload.tweetVector } : {}),
     });
   },

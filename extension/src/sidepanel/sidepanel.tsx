@@ -132,16 +132,37 @@ export function SidePanel(): React.ReactElement {
   const syncToBackend = useCallback(
     async (vector: { social: number; economic: number; populist: number }) => {
       try {
-        const backendUrl =
-          (await chrome.storage.local.get("backendUrl")).backendUrl ?? "http://localhost:3001";
-        const apiKey = (await chrome.storage.local.get("apiKey")).apiKey ?? "";
+        const stored = await chrome.storage.local.get([
+          "backendUrl",
+          "apiKey",
+          "authToken",
+          "accessToken",
+        ]);
+        const backendUrl = (stored.backendUrl as string | undefined) ?? "http://localhost:3001";
+        const apiKey = (stored.apiKey as string | undefined) ?? "";
+        const rawToken = (
+          (stored.authToken as string | undefined) ??
+          (stored.accessToken as string | undefined) ??
+          ""
+        )
+          .trim()
+          .replace(/^Bearer\s+/i, "");
+
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+
+        if (apiKey.length > 0) {
+          headers["X-API-Key"] = apiKey;
+        }
+
+        if (rawToken.length > 0) {
+          headers.Authorization = `Bearer ${rawToken}`;
+        }
 
         const response = await fetch(`${backendUrl}/api/quiz/score`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": apiKey,
-          },
+          headers,
           body: JSON.stringify(vector),
         });
 

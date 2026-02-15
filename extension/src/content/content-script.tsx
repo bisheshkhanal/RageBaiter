@@ -374,12 +374,22 @@ const sendTweetToServiceWorker = (payload: TweetScrapePayload): void => {
   });
 };
 
+type AnalysisCardFields = {
+  counterArgument?: string | undefined;
+  logicFailure?: string | undefined;
+  claim?: string | undefined;
+  mechanism?: string | undefined;
+  dataCheck?: string | undefined;
+  socraticChallenge?: string | undefined;
+};
+
 const injectInterventionUI = (
   tweetElement: HTMLElement,
   level: string,
   reason: string,
   tweetId: string,
-  tweetVector?: { social: number; economic: number; populist: number }
+  tweetVector?: { social: number; economic: number; populist: number },
+  analysisFields?: AnalysisCardFields
 ): void => {
   if (tweetElement.dataset.ragebaiterUi === "true") {
     return;
@@ -389,9 +399,18 @@ const injectInterventionUI = (
     return;
   }
 
+  const accentColor = level === "high" ? "#ef4444" : level === "medium" ? "#f59e0b" : "#f59e0b";
+
+  tweetElement.style.outline = `2px solid ${accentColor}`;
+  tweetElement.style.outlineOffset = "-2px";
+  tweetElement.style.borderRadius = "12px";
+  tweetElement.style.position = "relative";
+  tweetElement.style.background = `${accentColor}08`;
+
   const container = document.createElement("div");
   container.className = "ragebaiter-intervention-container";
-  tweetElement.prepend(container);
+  container.style.padding = "8px 0 0";
+  tweetElement.append(container);
   tweetElement.dataset.ragebaiterUi = "true";
 
   const root = createRoot(container);
@@ -400,10 +419,22 @@ const injectInterventionUI = (
     ["low", "medium", "high"].includes(level) ? level : "low"
   ) as InterventionLevel;
 
+  const clearHighlight = () => {
+    tweetElement.style.outline = "";
+    tweetElement.style.outlineOffset = "";
+    tweetElement.style.background = "";
+  };
+
   root.render(
     <InterventionPopup
       level={safeLevel}
       reason={reason}
+      counterArgument={analysisFields?.counterArgument}
+      logicFailure={analysisFields?.logicFailure}
+      claim={analysisFields?.claim}
+      mechanism={analysisFields?.mechanism}
+      dataCheck={analysisFields?.dataCheck}
+      socraticChallenge={analysisFields?.socraticChallenge}
       onDismiss={() => {
         if (tweetVector) {
           void sendFeedbackSubmitted({
@@ -416,6 +447,7 @@ const injectInterventionUI = (
           });
         }
         container.remove();
+        clearHighlight();
         tweetElement.dataset.ragebaiterUi = "dismissed";
       }}
       onProceed={() => {
@@ -430,6 +462,7 @@ const injectInterventionUI = (
           });
         }
         container.remove();
+        clearHighlight();
         tweetElement.dataset.ragebaiterUi = "acknowledged";
       }}
       onAgree={() => {
@@ -447,6 +480,10 @@ const injectInterventionUI = (
         });
 
         tweetElement.dataset.ragebaiterUi = "agreed";
+        setTimeout(() => {
+          container.remove();
+          clearHighlight();
+        }, 800);
       }}
       onDisagree={() => {
         if (!tweetVector) {
@@ -463,6 +500,10 @@ const injectInterventionUI = (
         });
 
         tweetElement.dataset.ragebaiterUi = "dismissed";
+        setTimeout(() => {
+          container.remove();
+          clearHighlight();
+        }, 800);
       }}
     />
   );
@@ -502,7 +543,15 @@ const applyInterventionLevel = (
       message.payload.level,
       message.payload.reason,
       message.payload.tweetId,
-      message.payload.tweetVector
+      message.payload.tweetVector,
+      {
+        counterArgument: message.payload.counterArgument,
+        logicFailure: message.payload.logicFailure,
+        claim: message.payload.claim,
+        mechanism: message.payload.mechanism,
+        dataCheck: message.payload.dataCheck,
+        socraticChallenge: message.payload.socraticChallenge,
+      }
     );
   }
 
@@ -515,7 +564,15 @@ const applyInterventionLevel = (
       level,
       message.payload.topic,
       message.payload.tweetId,
-      message.payload.tweetVector
+      message.payload.tweetVector,
+      {
+        counterArgument: message.payload.counterArgument,
+        logicFailure: message.payload.logicFailure,
+        claim: message.payload.claim,
+        mechanism: message.payload.mechanism,
+        dataCheck: message.payload.dataCheck,
+        socraticChallenge: message.payload.socraticChallenge,
+      }
     );
   }
 
