@@ -4,6 +4,7 @@ import {
   type AnalyzeResultMessage,
   type InterventionTriggerMessage,
   type MessageAck,
+  type PoliticalVectorPayload,
 } from "../messaging/protocol.js";
 import {
   sendFeedbackSubmitted,
@@ -17,6 +18,47 @@ import { InterventionPopup, type InterventionLevel } from "../components/Interve
 const LEGACY_TWEET_SELECTOR = 'article[data-testid="tweet"]';
 const FALLBACK_TWEET_SELECTOR = 'article[role="article"]';
 const URL_CHECK_INTERVAL_MS = 500;
+const BRIDGE_REQUEST_TYPE = "RAGEBAITER_BRIDGE_GET_STATE";
+const BRIDGE_STATE_TYPE = "RAGEBAITER_BRIDGE_STATE";
+const BRIDGE_UPDATE_TYPE = "RAGEBAITER_BRIDGE_UPDATE";
+const BRIDGE_PAGE_SOURCE = "ragebaiter-visualizer";
+const BRIDGE_EXTENSION_SOURCE = "ragebaiter-extension";
+
+type StoredUserVector = PoliticalVectorPayload & {
+  x: number;
+  y: number;
+};
+
+type BridgeHistoryEvent = {
+  id: string;
+  tweetId: string;
+  feedback: "acknowledged" | "agreed" | "dismissed";
+  timestamp: string;
+  tweetVector: PoliticalVectorPayload;
+  beforeVector: PoliticalVectorPayload;
+  afterVector: PoliticalVectorPayload;
+  delta: PoliticalVectorPayload;
+  syncedAt?: string;
+  syncAttempts: number;
+};
+
+type BridgeStatePayload = {
+  userVector: StoredUserVector | null;
+  vectorHistory: BridgeHistoryEvent[];
+};
+
+type BridgeRequestMessage = {
+  source: typeof BRIDGE_PAGE_SOURCE;
+  type: typeof BRIDGE_REQUEST_TYPE;
+  requestId?: string;
+};
+
+type BridgeResponseMessage = {
+  source: typeof BRIDGE_EXTENSION_SOURCE;
+  type: typeof BRIDGE_STATE_TYPE | typeof BRIDGE_UPDATE_TYPE;
+  requestId?: string;
+  payload: BridgeStatePayload;
+};
 
 type SelectorFeatureFlags = {
   legacyTweetSelectorEnabled: boolean;
@@ -74,6 +116,113 @@ const isDebugEnvironment = (): boolean => {
 
   const testGlobal = globalThis as { __vitest_worker__?: unknown; vitest?: unknown };
   return Boolean(testGlobal.__vitest_worker__ || testGlobal.vitest);
+};
+
+const isLocalBridgeHost = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+};
+
+const readBridgeState = async (): Promise<BridgeStatePayload> => {
+  if (typeof chrome === "undefined" || !chrome.storage?.local) {
+    return {
+      userVector: null,
+      vectorHistory: [],
+    };
+  }
+
+  const stored = (await chrome.storage.local.get(["userVector", "vectorHistory"])) as {
+    userVector?: StoredUserVector;
+    vectorHistory?: BridgeHistoryEvent[];
+  };
+
+  return {
+    userVector: stored.userVector ?? null,
+    vectorHistory: Array.isArray(stored.vectorHistory) ? stored.vectorHistory : [],
+  };
+};
+
+const postBridgeState = async (
+  type: BridgeResponseMessage["type"],
+  requestId?: string
+): Promise<void> => {
+  const payload = await readBridgeState();
+  const message: BridgeResponseMessage = {
+    source: BRIDGE_EXTENSION_SOURCE,
+    type,
+    payload,
+    ...(requestId ? { requestId } : {}),
+  };
+  window.postMessage(message, window.location.origin);
+};
+
+const registerVisualizerBridge = (): { stop: () => void } | null => {
+  if (!isLocalBridgeHost()) {
+    return null;
+  }
+
+  if (
+    typeof chrome === "undefined" ||
+    !chrome.storage?.local ||
+    !chrome.storage?.onChanged?.addListener ||
+    !chrome.storage?.onChanged?.removeListener
+  ) {
+    return null;
+  }
+
+  const onWindowMessage = (event: MessageEvent<unknown>) => {
+    if (event.source !== window || event.origin !== window.location.origin) {
+      return;
+    }
+
+    const data = event.data as Partial<BridgeRequestMessage> | undefined;
+    if (!data || data.source !== BRIDGE_PAGE_SOURCE || data.type !== BRIDGE_REQUEST_TYPE) {
+      return;
+    }
+
+    void postBridgeState(
+      BRIDGE_STATE_TYPE,
+      typeof data.requestId === "string" ? data.requestId : undefined
+    );
+  };
+
+  const onStorageChanged = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: string
+  ) => {
+    if (areaName !== "local") {
+      return;
+    }
+
+    if (!changes.userVector && !changes.vectorHistory) {
+      return;
+    }
+
+    void postBridgeState(BRIDGE_UPDATE_TYPE);
+  };
+
+  let active = true;
+
+  const stop = () => {
+    if (!active) {
+      return;
+    }
+
+    active = false;
+    window.removeEventListener("message", onWindowMessage);
+    chrome.storage.onChanged.removeListener(onStorageChanged);
+    window.__ragebaiterVisualizerBridgeStop = undefined;
+  };
+
+  window.addEventListener("message", onWindowMessage);
+  chrome.storage.onChanged.addListener(onStorageChanged);
+  window.addEventListener("pagehide", stop, { once: true });
+  window.addEventListener("beforeunload", stop, { once: true });
+
+  return { stop };
 };
 
 const emitSelectorMissTelemetry = (tweetSelectors: string[], reason: string): void => {
@@ -825,12 +974,20 @@ declare global {
     __ragebaiterSiteConfig?: SiteConfiguration;
     __ragebaiterSelectorFeatureFlags?: Partial<SelectorFeatureFlags>;
     __RAGEBAITER_SCRAPER_DISABLED__?: boolean;
+    __ragebaiterVisualizerBridgeStop?: (() => void) | undefined;
   }
 }
 
 const checkAndInitialize = async (): Promise<void> => {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return;
+  }
+
+  if (!window.__ragebaiterVisualizerBridgeStop) {
+    const bridge = registerVisualizerBridge();
+    if (bridge) {
+      window.__ragebaiterVisualizerBridgeStop = bridge.stop;
+    }
   }
 
   try {

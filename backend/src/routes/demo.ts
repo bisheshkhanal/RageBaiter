@@ -1,4 +1,11 @@
 import { Hono } from "hono";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const mattWalshPfpPath = resolve(__dirname, "mattwalsh.png");
 
 const demoHtml = `<!doctype html>
 <html lang="en">
@@ -72,6 +79,12 @@ const demoHtml = `<!doctype html>
         font-size: 18px;
         overflow: hidden;
       }
+      .avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
       .tweet-content {
         flex: 1;
         min-width: 0;
@@ -143,7 +156,7 @@ const demoHtml = `<!doctype html>
 
       <article data-testid="tweet" role="article">
         <div class="tweet-container">
-          <div class="avatar" style="background-color: #e64a19;">M</div>
+          <div class="avatar"><img src="/demo/mattwalsh.png" alt="Matt Walsh" /></div>
           <div class="tweet-content">
             <header>
               <span class="display-name">Matt Walsh</span>
@@ -162,55 +175,19 @@ const demoHtml = `<!doctype html>
           </div>
         </div>
       </article>
-
-      <article data-testid="tweet" role="article">
-        <div class="tweet-container">
-          <div class="avatar" style="background-color: #d32f2f;">W</div>
-          <div class="tweet-content">
-            <header>
-              <span class="display-name">Wall Street Apes</span>
-              <span class="handle">@WallStreetApes</span>
-              <a href="/WallStreetApes/status/2020162317879787825">
-                <time datetime="2026-01-11T18:06:00.000Z">Jan 11, 2026</time>
-              </a>
-            </header>
-            <div data-testid="tweetText" lang="en">It turns out the woman shot by ICE in Minneapolis, Renee Nicole Good, was protecting a Somalian sex offender here illegally with a warrant. So do you guys want to meet who Renee Nicole Good thought she was protecting? Who she set out to protect when she went and attacked ICE?</div>
-            <div class="actions">
-              <span class="action-item">&#x1f4ac; 3.1K</span>
-              <span class="action-item">&#x21c4; 9.4K</span>
-              <span class="action-item">&#x2661; 28K</span>
-              <span class="action-item">Share</span>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article data-testid="tweet" role="article">
-        <div class="tweet-container">
-          <div class="avatar" style="background-color: #1565c0;">D</div>
-          <div class="tweet-content">
-            <header>
-              <span class="display-name">Disavow Trump</span>
-              <span class="handle">@DisavowTrump20</span>
-              <a href="/DisavowTrump20/status/2020555697658659165">
-                <time datetime="2026-01-12T20:00:00.000Z">Jan 12, 2026</time>
-              </a>
-            </header>
-            <div data-testid="tweetText" lang="en">Renee Good was a 37 year old mother of three who had just dropped her 6 year old off at school. ICE agent Jonathan Ross fired three shots and killed her as she tried to move her car away from agents. Video evidence does not show she posed a lethal threat. She was an American citizen. This is what a police state looks like.</div>
-            <div class="actions">
-              <span class="action-item">&#x1f4ac; 2.8K</span>
-              <span class="action-item">&#x21c4; 15K</span>
-              <span class="action-item">&#x2661; 42K</span>
-              <span class="action-item">Share</span>
-            </div>
-          </div>
-        </div>
-      </article>
     </main>
   </body>
 </html>`;
 
 export const demoRoutes = new Hono();
+
+demoRoutes.get("/mattwalsh.png", (c) => {
+  const imageBuffer = readFileSync(mattWalshPfpPath);
+  return c.body(imageBuffer, 200, {
+    "Content-Type": "image/png",
+    "Cache-Control": "public, max-age=3600",
+  });
+});
 
 demoRoutes.get("/", (c) => {
   return c.html(demoHtml, 200);

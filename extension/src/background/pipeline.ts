@@ -262,10 +262,6 @@ export class PipelineOrchestrator {
     };
 
     const profile = await this._deps.getUserProfile();
-    const decision = this._deps.evaluateTweet(tweetAnalysis, profile);
-    const analysisSummary = `Topic: ${analysis.topic}. Fallacies: ${
-      analysis.fallacies.length > 0 ? analysis.fallacies.join(", ") : "None detected"
-    }. Confidence: ${Math.round(analysis.confidence * 100)}%.`;
 
     const isDemoHost = (() => {
       if (!input.tabUrl) {
@@ -280,13 +276,32 @@ export class PipelineOrchestrator {
       }
     })();
 
-    const forceDemoIntervention = isDemoHost && !decision.shouldIntervene;
-    const interventionLevel = forceDemoIntervention ? "low" : decision.level;
-    const interventionReason = forceDemoIntervention ? analysisSummary : decision.action;
+    const demoProfile: typeof profile = isDemoHost
+      ? {
+          ...profile,
+          decisionConfig: {
+            ...profile.decisionConfig,
+            thresholds: {
+              echoChamberMaxDistance: 0.8,
+              mildBiasMaxDistance: 1.4,
+            },
+            cooldownMs: 0,
+          },
+        }
+      : profile;
 
-    if (!decision.shouldIntervene && !forceDemoIntervention) {
+    const decision = this._deps.evaluateTweet(tweetAnalysis, demoProfile);
+
+    if (!decision.shouldIntervene && !isDemoHost) {
       return { tweetId: input.tweetId, stage: "decision", decision };
     }
+
+    if (!decision.shouldIntervene && isDemoHost) {
+      return { tweetId: input.tweetId, stage: "decision", decision };
+    }
+
+    const interventionLevel = decision.level;
+    const interventionReason = decision.action;
 
     try {
       await this._deps.sendInterventionToTab(input.tabId, {
@@ -307,14 +322,7 @@ export class PipelineOrchestrator {
       return {
         tweetId: input.tweetId,
         stage: "decision",
-        decision: forceDemoIntervention
-          ? {
-              ...decision,
-              level: "low",
-              shouldIntervene: true,
-              action: "DEMO_PREVIEW",
-            }
-          : decision,
+        decision,
         error: message,
       };
     }
@@ -322,14 +330,7 @@ export class PipelineOrchestrator {
     return {
       tweetId: input.tweetId,
       stage: "injected",
-      decision: forceDemoIntervention
-        ? {
-            ...decision,
-            level: "low",
-            shouldIntervene: true,
-            action: "DEMO_PREVIEW",
-          }
-        : decision,
+      decision,
     };
   }
 }

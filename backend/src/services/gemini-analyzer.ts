@@ -72,7 +72,7 @@ type GeminiAnalyzerOptions = {
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_MAX_INPUT_CHARS = 2_000;
-const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_TIMEOUT_MS = 25_000;
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 200;
 
