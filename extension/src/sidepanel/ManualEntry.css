@@ -1,0 +1,124 @@
+.manual-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.manual-entry-header {
+  text-align: center;
+}
+
+.manual-entry-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.manual-entry-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.manual-entry-presets {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.preset-button {
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.preset-button:hover {
+  border-color: #3b82f6;
+  background: #f8fafc;
+}
+
+.manual-entry-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.manual-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manual-field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.manual-field input {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #111827;
+  background: white;
+}
+
+.manual-field input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.manual-entry-errors {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.manual-entry-error {
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.manual-entry-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.manual-entry-button {
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.manual-entry-button.primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.manual-entry-button.primary:hover {
+  background: #2563eb;
+}
+
+.manual-entry-button.secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.manual-entry-button.secondary:hover {
+  background: #e5e7eb;
+}

@@ -26,7 +26,7 @@ create table if not exists public.users (
 
 create table if not exists public.analyzed_tweets (
   id bigint generated always as identity primary key,
-  tweet_id text not null,
+  tweet_id text not null unique,
   tweet_text text not null,
   vector_social double precision not null,
   vector_economic double precision not null,

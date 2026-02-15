@@ -1,0 +1,138 @@
+.quiz-results {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.quiz-results-header {
+  text-align: center;
+}
+
+.quiz-results-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.quiz-results-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.vector-display {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.vector-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vector-axis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vector-axis-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.vector-axis-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3b82f6;
+  font-family: ui-monospace, monospace;
+}
+
+.vector-bar-container {
+  position: relative;
+}
+
+.vector-bar {
+  height: 12px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.vector-bar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #9ca3af;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+.vector-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #3b82f6;
+  border-radius: 6px;
+  transition: all 500ms ease;
+}
+
+.vector-bar-fill.economic {
+  background: #10b981;
+}
+
+.vector-bar-fill.populist {
+  background: #f59e0b;
+}
+
+.vector-axis-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.quiz-results-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiz-result-button {
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.quiz-result-button.primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.quiz-result-button.primary:hover {
+  background: #2563eb;
+}
+
+.quiz-result-button.secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.quiz-result-button.secondary:hover {
+  background: #e5e7eb;
+}

@@ -1,0 +1,133 @@
+.site-toggle-container {
+  margin-bottom: 1rem;
+}
+
+.site-toggle-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.site-toggle-header h3 {
+  margin: 0;
+}
+
+.site-toggle-count {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.site-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.site-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.site-toggle-item.disabled-globally {
+  opacity: 0.5;
+}
+
+.site-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.site-toggle-checkbox {
+  width: 1rem;
+  height: 1rem;
+}
+
+.site-toggle-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.site-toggle-name {
+  font-weight: 500;
+}
+
+.site-toggle-description {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.site-toggle-status {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.site-toggle-status.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.site-toggle-status.paused {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.site-toggle-global {
+  margin-top: 0.5rem;
+}
+
+.global-pause-button {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.global-pause-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.global-pause-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.global-pause-button.paused {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.site-toggle-warning,
+.site-toggle-paused-notice {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+}
+
+.site-toggle-warning {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.site-toggle-paused-notice {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+.site-toggle-loading {
+  padding: 1rem;
+  text-align: center;
+  opacity: 0.6;
+}

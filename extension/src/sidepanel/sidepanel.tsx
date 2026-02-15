@@ -1,20 +1,422 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './sidepanel.css';
+import React, { useCallback, useEffect, useState } from "react";
+import ReactDOM from "react-dom/client";
 
-type Tab = 'quiz' | 'debug' | 'settings';
+import { sendQuizCompleted, sendSettingsUpdated } from "../messaging/runtime.js";
+import {
+  clearQuizResult,
+  createQuizResult,
+  getStoredQuizResult,
+  storeQuizResult,
+  type QuizAnswer,
+} from "../lib/quiz-scorer.js";
+import type { LikertValue } from "../lib/quiz-data.js";
+import { QUIZ_QUESTION_COUNT } from "../lib/quiz-data.js";
 
-function SidePanel(): React.ReactElement {
-  const [activeTab, setActiveTab] = React.useState<Tab>('quiz');
-  const [userVector, setUserVector] = React.useState<{ x: number; y: number } | null>(null);
+import { ManualEntry } from "./ManualEntry.js";
+import { QuizContainer } from "./QuizContainer.js";
+import { QuizResults } from "./QuizResults.js";
+import { LLMConfig } from "./LLMConfig.js";
+import { DebugPanel } from "./DebugPanel.js";
+import { SiteToggle } from "../components/Settings/SiteToggle.js";
+import "./sidepanel.css";
 
-  React.useEffect(() => {
-    chrome.storage.local.get(['userVector']).then((result) => {
-      if (result.userVector) {
-        setUserVector(result.userVector);
+type Tab = "quiz" | "debug" | "settings";
+type QuizState = "intro" | "quiz" | "manual" | "results";
+
+type UserVector = {
+  social: number;
+  economic: number;
+  populist: number;
+  x: number;
+  y: number;
+};
+
+export function SidePanel(): React.ReactElement {
+  const [activeTab, setActiveTab] = useState<Tab>("quiz");
+  const [quizState, setQuizState] = useState<QuizState>("intro");
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Map<number, LikertValue>>(new Map());
+  const [userVector, setUserVector] = useState<UserVector | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [privacyStatus, setPrivacyStatus] = useState<string | null>(null);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+  const [isPrivacyActionRunning, setIsPrivacyActionRunning] = useState(false);
+
+  useEffect(() => {
+    const loadStoredData = async () => {
+      const [vectorResult, quizResult] = await Promise.all([
+        chrome.storage.local.get("userVector"),
+        getStoredQuizResult(),
+      ]);
+
+      if (vectorResult.userVector) {
+        setUserVector(vectorResult.userVector);
       }
+
+      if (quizResult) {
+        setUserVector({
+          social: quizResult.vector.social,
+          economic: quizResult.vector.economic,
+          populist: quizResult.vector.populist,
+          x: quizResult.vector.social,
+          y: quizResult.vector.economic,
+        });
+        setQuizState("results");
+      }
+
+      setIsLoading(false);
+    };
+
+    loadStoredData();
+  }, []);
+
+  const handleStartQuiz = useCallback(() => {
+    setQuizState("quiz");
+    setCurrentQuestionIndex(0);
+    setAnswers(new Map());
+  }, []);
+
+  const handleAnswer = useCallback((questionId: number, value: LikertValue) => {
+    setAnswers((prev) => new Map(prev).set(questionId, value));
+  }, []);
+
+  const handleNext = useCallback(() => {
+    setCurrentQuestionIndex((prev) => Math.min(prev + 1, QUIZ_QUESTION_COUNT - 1));
+  }, []);
+
+  const handlePrevious = useCallback(() => {
+    setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
+  }, []);
+
+  const syncToBackend = useCallback(
+    async (vector: { social: number; economic: number; populist: number }) => {
+      try {
+        const backendUrl =
+          (await chrome.storage.local.get("backendUrl")).backendUrl ?? "http://localhost:3001";
+        const apiKey = (await chrome.storage.local.get("apiKey")).apiKey ?? "";
+
+        const response = await fetch(`${backendUrl}/api/quiz/score`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify(vector),
+        });
+
+        if (!response.ok) {
+          console.warn("Backend sync failed:", response.status);
+        }
+      } catch (error) {
+        console.warn("Backend sync error:", error);
+      }
+    },
+    []
+  );
+
+  const handleComplete = useCallback(async () => {
+    const quizAnswers: QuizAnswer[] = Array.from(answers.entries()).map(([questionId, value]) => ({
+      questionId,
+      value,
+    }));
+
+    const result = createQuizResult(quizAnswers);
+
+    await storeQuizResult(result);
+
+    const vector = {
+      social: result.vector.social,
+      economic: result.vector.economic,
+      populist: result.vector.populist,
+      x: result.vector.social,
+      y: result.vector.economic,
+    };
+
+    await chrome.storage.local.set({ userVector: vector });
+
+    await sendQuizCompleted({
+      social: result.vector.social,
+      economic: result.vector.economic,
+      populist: result.vector.populist,
+    });
+
+    await syncToBackend(result.vector);
+
+    setUserVector(vector);
+    setQuizState("results");
+  }, [answers, syncToBackend]);
+
+  const handleManualEntry = useCallback(() => {
+    setQuizState("manual");
+  }, []);
+
+  const handleManualSubmit = useCallback(
+    async (vector: { social: number; economic: number; populist: number }) => {
+      const fullVector = {
+        ...vector,
+        x: vector.social,
+        y: vector.economic,
+      };
+
+      await chrome.storage.local.set({ userVector: fullVector });
+
+      await sendQuizCompleted(vector);
+
+      await syncToBackend(vector);
+
+      await storeQuizResult({
+        vector,
+        completedAt: new Date().toISOString(),
+        answers: [],
+      });
+
+      setUserVector(fullVector);
+      setQuizState("results");
+    },
+    [syncToBackend]
+  );
+
+  const handleRetake = useCallback(async () => {
+    await clearQuizResult();
+    setAnswers(new Map());
+    setCurrentQuestionIndex(0);
+    setQuizState("quiz");
+  }, []);
+
+  const handleContinue = useCallback(() => {
+    setActiveTab("debug");
+  }, []);
+
+  const handleCancelManual = useCallback(() => {
+    if (answers.size > 0) {
+      setQuizState("quiz");
+    } else {
+      setQuizState("intro");
+    }
+  }, [answers.size]);
+
+  const handleSettingsSync = useCallback(async () => {
+    await sendSettingsUpdated({
+      isEnabled: true,
+      sensitivity: "medium",
     });
   }, []);
+
+  const getBackendRequestConfig = useCallback(async () => {
+    const stored = await chrome.storage.local.get([
+      "backendUrl",
+      "apiKey",
+      "authToken",
+      "accessToken",
+    ]);
+    const backendUrl = (stored.backendUrl as string | undefined) ?? "http://localhost:3001";
+    const apiKey = (stored.apiKey as string | undefined) ?? "";
+    const rawToken = (
+      (stored.authToken as string | undefined) ??
+      (stored.accessToken as string | undefined) ??
+      ""
+    )
+      .trim()
+      .replace(/^Bearer\s+/i, "");
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (apiKey.length > 0) {
+      headers["X-API-Key"] = apiKey;
+    }
+
+    if (rawToken.length > 0) {
+      headers.Authorization = `Bearer ${rawToken}`;
+    }
+
+    return { backendUrl, headers, hasAuthToken: rawToken.length > 0 };
+  }, []);
+
+  const readErrorMessage = useCallback(async (response: Response) => {
+    const fallback = `Request failed (${response.status})`;
+
+    try {
+      const data = (await response.json()) as {
+        error?: {
+          message?: unknown;
+        };
+      };
+
+      if (typeof data.error?.message === "string" && data.error.message.length > 0) {
+        return data.error.message;
+      }
+    } catch {
+      return fallback;
+    }
+
+    return fallback;
+  }, []);
+
+  const handleExportData = useCallback(async () => {
+    setPrivacyError(null);
+    setPrivacyStatus(null);
+    setIsPrivacyActionRunning(true);
+
+    try {
+      const { backendUrl, headers, hasAuthToken } = await getBackendRequestConfig();
+      if (!hasAuthToken) {
+        throw new Error("Missing auth token in storage (authToken or accessToken)");
+      }
+
+      const response = await fetch(`${backendUrl}/api/user/export`, {
+        method: "GET",
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const data = (await response.json()) as Record<string, unknown>;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const objectUrl = URL.createObjectURL(blob);
+      const filename = `ragebaiter-export-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+
+      setPrivacyStatus("Export downloaded successfully.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to export data";
+      setPrivacyError(message);
+    } finally {
+      setIsPrivacyActionRunning(false);
+    }
+  }, [getBackendRequestConfig, readErrorMessage]);
+
+  const handleDeleteData = useCallback(async () => {
+    setPrivacyError(null);
+    setPrivacyStatus(null);
+
+    const confirmed = window.confirm(
+      "Delete all backend data for this account? This cannot be undone."
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsPrivacyActionRunning(true);
+
+    try {
+      const { backendUrl, headers, hasAuthToken } = await getBackendRequestConfig();
+      if (!hasAuthToken) {
+        throw new Error("Missing auth token in storage (authToken or accessToken)");
+      }
+
+      const response = await fetch(`${backendUrl}/api/user/delete`, {
+        method: "POST",
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const body = (await response.json()) as { deleted?: unknown };
+      const deleted = body.deleted === true;
+
+      if (deleted) {
+        await clearQuizResult();
+        await chrome.storage.local.remove("userVector");
+        setUserVector(null);
+      }
+
+      setPrivacyStatus(
+        deleted
+          ? "All backend data deleted for this account."
+          : "No backend data was found for this account."
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete data";
+      setPrivacyError(message);
+    } finally {
+      setIsPrivacyActionRunning(false);
+    }
+  }, [getBackendRequestConfig, readErrorMessage]);
+
+  const renderQuizContent = () => {
+    if (isLoading) {
+      return <div className="tab-content">Loading...</div>;
+    }
+
+    switch (quizState) {
+      case "intro":
+        return (
+          <div className="tab-content">
+            <h2>Political Compass Quiz</h2>
+            <p className="placeholder-text">
+              Take an 18-question quiz to determine your position across three political axes:
+              Social, Economic, and Populist.
+            </p>
+            <button
+              type="button"
+              className="action-button primary"
+              onClick={handleStartQuiz}
+              data-testid="quiz-start-button"
+            >
+              Start Quiz
+            </button>
+            <button
+              type="button"
+              className="quiz-skip-link"
+              onClick={handleManualEntry}
+              data-testid="quiz-skip-intro-button"
+            >
+              Or enter manually
+            </button>
+          </div>
+        );
+
+      case "quiz":
+        return (
+          <div className="tab-content">
+            <QuizContainer
+              currentQuestionIndex={currentQuestionIndex}
+              answers={answers}
+              onAnswer={handleAnswer}
+              onNext={handleNext}
+              onPrevious={handlePrevious}
+              onComplete={handleComplete}
+              onSkip={handleManualEntry}
+            />
+          </div>
+        );
+
+      case "manual":
+        return (
+          <div className="tab-content">
+            <ManualEntry onSubmit={handleManualSubmit} onCancel={handleCancelManual} />
+          </div>
+        );
+
+      case "results":
+        return (
+          <div className="tab-content">
+            {userVector && (
+              <QuizResults
+                social={userVector.social}
+                economic={userVector.economic}
+                populist={userVector.populist}
+                onRetake={handleRetake}
+                onContinue={handleContinue}
+              />
+            )}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="sidepanel-container">
@@ -23,7 +425,7 @@ function SidePanel(): React.ReactElement {
         {userVector && (
           <div className="vector-badge">
             <span className="vector-label">Your Position</span>
-            <span className="vector-value">
+            <span className="vector-value" data-testid="user-vector-badge">
               ({userVector.x.toFixed(2)}, {userVector.y.toFixed(2)})
             </span>
           </div>
@@ -33,114 +435,70 @@ function SidePanel(): React.ReactElement {
       <nav className="sidepanel-tabs">
         <button
           type="button"
-          className={`tab-button ${activeTab === 'quiz' ? 'active' : ''}`}
-          onClick={() => setActiveTab('quiz')}
+          className={`tab-button ${activeTab === "quiz" ? "active" : ""}`}
+          onClick={() => setActiveTab("quiz")}
         >
           Political Quiz
         </button>
         <button
           type="button"
-          className={`tab-button ${activeTab === 'debug' ? 'active' : ''}`}
-          onClick={() => setActiveTab('debug')}
+          className={`tab-button ${activeTab === "debug" ? "active" : ""}`}
+          onClick={() => setActiveTab("debug")}
         >
           Debug Panel
         </button>
         <button
           type="button"
-          className={`tab-button ${activeTab === 'settings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('settings')}
+          className={`tab-button ${activeTab === "settings" ? "active" : ""}`}
+          onClick={() => setActiveTab("settings")}
         >
           Settings
         </button>
       </nav>
 
-      <main className="sidepanel-content">
-        {activeTab === 'quiz' && (
-          <div className="tab-content">
-            <h2>Political Compass Quiz</h2>
-            <p className="placeholder-text">
-              Take a 15-20 question quiz to determine your political position.
-            </p>
-            <button type="button" className="action-button primary" disabled>
-              Start Quiz (Coming Soon)
-            </button>
-          </div>
-        )}
+      <main className={`sidepanel-content ${activeTab === "debug" ? "no-padding no-scroll" : ""}`}>
+        {activeTab === "quiz" && renderQuizContent()}
 
-        {activeTab === 'debug' && (
-          <div className="tab-content">
-            <h2>Debug Panel</h2>
-            <div className="debug-section">
-              <h3>Recent Analyses</h3>
-              <p className="placeholder-text">No analyses recorded yet.</p>
-            </div>
-            <div className="debug-section">
-              <h3>Cache Statistics</h3>
-              <div className="stat-grid">
-                <div className="stat-card">
-                  <span className="stat-label">Cache Hits</span>
-                  <span className="stat-value">0</span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Cache Misses</span>
-                  <span className="stat-value">0</span>
-                </div>
-              </div>
-            </div>
-            <div className="debug-section">
-              <h3>Token Usage</h3>
-              <p className="placeholder-text">No token usage recorded.</p>
-            </div>
-          </div>
-        )}
+        {activeTab === "debug" && <DebugPanel />}
 
-        {activeTab === 'settings' && (
+        {activeTab === "settings" && (
           <div className="tab-content">
             <h2>Settings</h2>
-            
-            <div className="settings-section">
-              <h3>LLM Provider</h3>
-              <div className="setting-item">
-                <label htmlFor="provider-select">Provider</label>
-                <select id="provider-select" className="setting-select" disabled>
-                  <option>Gemini (Default)</option>
-                  <option>OpenAI</option>
-                  <option>Anthropic</option>
-                </select>
-              </div>
-              <div className="setting-item">
-                <label htmlFor="api-key">API Key</label>
-                <input
-                  id="api-key"
-                  type="password"
-                  placeholder="Enter your API key"
-                  className="setting-input"
-                  disabled
-                />
-                <p className="setting-hint">Your API key is stored locally only.</p>
-              </div>
-            </div>
 
-            <div className="settings-section">
-              <h3>Sensitivity</h3>
-              <div className="setting-item">
-                <label htmlFor="sensitivity-select">Detection Level</label>
-                <select id="sensitivity-select" className="setting-select" disabled>
-                  <option>Low</option>
-                  <option selected>Medium</option>
-                  <option>High</option>
-                </select>
-              </div>
-            </div>
+            <SiteToggle />
+
+            <LLMConfig
+              onConfigChange={(config) => {
+                console.log("[RageBaiter] LLM config updated:", config.provider);
+              }}
+            />
 
             <div className="settings-section">
               <h3>Privacy</h3>
-              <button type="button" className="action-button secondary" disabled>
-                Export My Data
+              <button type="button" className="action-button primary" onClick={handleSettingsSync}>
+                Sync Settings
               </button>
-              <button type="button" className="action-button danger" disabled>
+              <button
+                type="button"
+                className="action-button secondary"
+                onClick={handleExportData}
+                disabled={isPrivacyActionRunning}
+              >
+                {isPrivacyActionRunning ? "Working..." : "Export My Data"}
+              </button>
+              <button
+                type="button"
+                className="action-button danger"
+                onClick={handleDeleteData}
+                disabled={isPrivacyActionRunning}
+              >
                 Delete All Data
               </button>
+              <p className="setting-hint privacy-hint">
+                Requires stored bearer token in <code>authToken</code> or <code>accessToken</code>.
+              </p>
+              {privacyStatus && <p className="privacy-status privacy-success">{privacyStatus}</p>}
+              {privacyError && <p className="privacy-status privacy-error">{privacyError}</p>}
             </div>
           </div>
         )}
@@ -149,7 +507,7 @@ function SidePanel(): React.ReactElement {
   );
 }
 
-const root = document.getElementById('root');
+const root = document.getElementById("root");
 if (root) {
   ReactDOM.createRoot(root).render(<SidePanel />);
 }

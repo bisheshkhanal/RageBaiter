@@ -8,10 +8,11 @@ node_modules/
 .env.*.local
 .env.*.secret
 .env.*.bak
-!.env.example
+.env.example
 
 ## Project docs to keep private
 PRD.md
+SETUP_AND_EXTERNAL_CONFIG.md
 
 ## Build/artifacts
 .turbo/

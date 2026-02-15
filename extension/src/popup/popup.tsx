@@ -1,13 +1,14 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './popup.css';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { sendSettingsUpdated } from "../messaging/runtime.js";
+import "./popup.css";
 
 function Popup(): React.ReactElement {
   const [isEnabled, setIsEnabled] = React.useState(true);
   const [analysisCount, setAnalysisCount] = React.useState(0);
 
   React.useEffect(() => {
-    chrome.storage.local.get(['isEnabled', 'analysisCount']).then((result) => {
+    chrome.storage.local.get(["isEnabled", "analysisCount"]).then((result) => {
       setIsEnabled(result.isEnabled ?? true);
       setAnalysisCount(result.analysisCount ?? 0);
     });
@@ -16,6 +17,10 @@ function Popup(): React.ReactElement {
   const handleToggle = async () => {
     const newEnabled = !isEnabled;
     await chrome.storage.local.set({ isEnabled: newEnabled });
+    await sendSettingsUpdated({
+      isEnabled: newEnabled,
+      sensitivity: "medium",
+    });
     setIsEnabled(newEnabled);
   };
 
@@ -36,10 +41,10 @@ function Popup(): React.ReactElement {
             <span>Extension Enabled</span>
             <button
               type="button"
-              className={`toggle-button ${isEnabled ? 'enabled' : 'disabled'}`}
+              className={`toggle-button ${isEnabled ? "enabled" : "disabled"}`}
               onClick={handleToggle}
             >
-              {isEnabled ? 'ON' : 'OFF'}
+              {isEnabled ? "ON" : "OFF"}
             </button>
           </label>
         </div>
@@ -74,7 +79,7 @@ function Popup(): React.ReactElement {
   );
 }
 
-const root = document.getElementById('root');
+const root = document.getElementById("root");
 if (root) {
   ReactDOM.createRoot(root).render(<Popup />);
 }

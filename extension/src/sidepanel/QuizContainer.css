@@ -1,0 +1,132 @@
+.quiz-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.quiz-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiz-progress-bar {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.quiz-progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 4px;
+  transition: width 300ms ease;
+}
+
+.quiz-progress-text {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.quiz-question-card {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.quiz-question-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: #111827;
+  line-height: 1.5;
+  margin: 0 0 20px 0;
+}
+
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiz-option {
+  padding: 14px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 150ms ease;
+  text-align: left;
+}
+
+.quiz-option:hover {
+  border-color: #3b82f6;
+  background: #f8fafc;
+}
+
+.quiz-option.selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.quiz-navigation {
+  display: flex;
+  gap: 12px;
+}
+
+.quiz-nav-button {
+  flex: 1;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.quiz-nav-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quiz-nav-button.primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.quiz-nav-button.primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.quiz-nav-button.secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.quiz-nav-button.secondary:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.quiz-skip-link {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px;
+  align-self: center;
+}
+
+.quiz-skip-link:hover {
+  color: #374151;
+}

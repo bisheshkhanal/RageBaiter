@@ -10,6 +10,7 @@
     "test": "pnpm run test:unit && pnpm run test:integration",
     "test:unit": "vitest run --config vitest.config.ts --passWithNoTests",
     "test:integration": "vitest run --config vitest.config.ts \"src/**/*.integration.test.ts\" --passWithNoTests",
-    "test:e2e": "vitest run --config vitest.config.ts \"src/**/*.e2e.test.ts\" --passWithNoTests"
+    "test:e2e": "vitest run --config vitest.config.ts \"src/**/*.e2e.test.ts\" --passWithNoTests",
+    "benchmark:political-filter": "pnpm run build && node dist/political-keyword-filter.benchmark.js"
   }
 }
