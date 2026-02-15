@@ -42,6 +42,12 @@ type BackendAnalyzeResponse = {
     fallacies: string[];
     topic: string;
     confidence: number;
+    counter_argument?: string;
+    logic_failure?: string;
+    claim?: string;
+    mechanism?: string;
+    data_check?: string;
+    socratic_challenge?: string;
     analyzed_at: string;
     expires_at: string;
   } | null;
@@ -147,6 +153,12 @@ export type PipelineDeps = {
       tweetId: string;
       level: string;
       reason: string;
+      counterArgument?: string | undefined;
+      logicFailure?: string | undefined;
+      claim?: string | undefined;
+      mechanism?: string | undefined;
+      dataCheck?: string | undefined;
+      socraticChallenge?: string | undefined;
       tweetVector?: PoliticalVectorPayload;
     },
     messageId?: string
@@ -250,26 +262,76 @@ export class PipelineOrchestrator {
     };
 
     const profile = await this._deps.getUserProfile();
-    const decision = this._deps.evaluateTweet(tweetAnalysis, profile);
 
-    if (!decision.shouldIntervene) {
+    const isDemoHost = (() => {
+      if (!input.tabUrl) {
+        return false;
+      }
+
+      try {
+        const parsed = new URL(input.tabUrl);
+        return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      } catch {
+        return false;
+      }
+    })();
+
+    const demoProfile: typeof profile = isDemoHost
+      ? {
+          ...profile,
+          decisionConfig: {
+            ...profile.decisionConfig,
+            thresholds: {
+              echoChamberMaxDistance: 0.8,
+              mildBiasMaxDistance: 1.4,
+            },
+            cooldownMs: 0,
+          },
+        }
+      : profile;
+
+    const decision = this._deps.evaluateTweet(tweetAnalysis, demoProfile);
+
+    if (!decision.shouldIntervene && !isDemoHost) {
       return { tweetId: input.tweetId, stage: "decision", decision };
     }
+
+    if (!decision.shouldIntervene && isDemoHost) {
+      return { tweetId: input.tweetId, stage: "decision", decision };
+    }
+
+    const interventionLevel = decision.level;
+    const interventionReason = decision.action;
 
     try {
       await this._deps.sendInterventionToTab(input.tabId, {
         tweetId: input.tweetId,
-        level: decision.level,
-        reason: decision.action,
+        level: interventionLevel,
+        reason: interventionReason,
+        counterArgument: analysis.counterArgument,
+        logicFailure: analysis.logicFailure,
+        claim: analysis.claim,
+        mechanism: analysis.mechanism,
+        dataCheck: analysis.dataCheck,
+        socraticChallenge: analysis.socraticChallenge,
         tweetVector: analysis.tweetVector,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[RageBaiter][Pipeline] Injection failed for ${input.tweetId}:`, message);
-      return { tweetId: input.tweetId, stage: "decision", decision, error: message };
+      return {
+        tweetId: input.tweetId,
+        stage: "decision",
+        decision,
+        error: message,
+      };
     }
 
-    return { tweetId: input.tweetId, stage: "injected", decision };
+    return {
+      tweetId: input.tweetId,
+      stage: "injected",
+      decision,
+    };
   }
 }
 
@@ -312,6 +374,12 @@ export const createBackendFetcher = (
         confidence: data.analysis.confidence,
         tweetVector: data.analysis.tweet_vector,
         fallacies: data.analysis.fallacies,
+        counterArgument: data.analysis.counter_argument,
+        logicFailure: data.analysis.logic_failure,
+        claim: data.analysis.claim,
+        mechanism: data.analysis.mechanism,
+        dataCheck: data.analysis.data_check,
+        socraticChallenge: data.analysis.socratic_challenge,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

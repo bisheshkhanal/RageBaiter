@@ -25,7 +25,22 @@ function Popup(): React.ReactElement {
   };
 
   const openSidePanel = async () => {
-    await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+    try {
+      // Try to open against active tab first
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab?.id) {
+        await chrome.sidePanel.open({ tabId: activeTab.id });
+        return;
+      }
+    } catch {
+      // Fallback to window-level open
+    }
+
+    try {
+      await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+    } catch (error) {
+      console.warn("[RageBaiter] Failed to open side panel", error);
+    }
   };
 
   return (

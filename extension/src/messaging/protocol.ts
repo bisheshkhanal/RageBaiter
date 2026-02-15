@@ -38,6 +38,12 @@ export type AnalyzeResultPayload = {
   confidence: number;
   tweetVector: PoliticalVectorPayload;
   fallacies: string[];
+  counterArgument?: string | undefined;
+  logicFailure?: string | undefined;
+  claim?: string | undefined;
+  mechanism?: string | undefined;
+  dataCheck?: string | undefined;
+  socraticChallenge?: string | undefined;
   level?: InterventionLevel;
 };
 
@@ -45,6 +51,12 @@ export type InterventionTriggerPayload = {
   tweetId: string;
   level: InterventionLevel;
   reason: string;
+  counterArgument?: string | undefined;
+  logicFailure?: string | undefined;
+  claim?: string | undefined;
+  mechanism?: string | undefined;
+  dataCheck?: string | undefined;
+  socraticChallenge?: string | undefined;
   tweetVector?: PoliticalVectorPayload;
 };
 

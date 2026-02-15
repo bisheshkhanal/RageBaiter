@@ -25,7 +25,14 @@ export const DEFAULT_SITE_CONFIG: SiteConfiguration = {
       id: "twitter",
       name: "Twitter/X",
       enabled: true,
-      urlPatterns: ["*://x.com/*", "*://twitter.com/*"],
+      urlPatterns: [
+        "*://x.com/*",
+        "*://twitter.com/*",
+        "http://localhost/*",
+        "https://localhost/*",
+        "http://127.0.0.1/*",
+        "https://127.0.0.1/*",
+      ],
       description: "Detect political content on Twitter/X feeds",
     },
     reddit: {
@@ -104,9 +111,16 @@ export interface ScrapedContent {
  */
 export function matchesUrlPattern(url: string, patterns: string[]): boolean {
   for (const pattern of patterns) {
-    // Convert pattern to regex
-    // Escape special regex chars except *
-    const regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    let regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+
+    const urlHasPort = /:\d+(?:\/|$)/.test(url);
+    const patternHostMatch = pattern.match(/^[^:]+:\/\/([^/]+)/);
+    const patternHost = patternHostMatch?.[1] || "";
+    const patternHostHasPort = /:\d+$/.test(patternHost);
+
+    if (urlHasPort && !patternHostHasPort) {
+      regexPattern = regexPattern.replace(/(:\/\/[^/]+)/, "$1(:\\d+)?");
+    }
 
     const regex = new RegExp(`^${regexPattern}$`, "i");
     if (regex.test(url)) {
@@ -139,19 +153,54 @@ export function isExtensionActiveOnUrl(url: string, config: SiteConfiguration): 
 }
 
 /**
+ * Ensure a site config includes all default URL patterns (union with existing)
+ * This handles backward compatibility when old stored configs lack new patterns like localhost
+ */
+function ensureDefaultPatternsForSite(siteId: SupportedSite, siteConfig: SiteConfig): SiteConfig {
+  const defaultSite = DEFAULT_SITE_CONFIG.sites[siteId];
+  if (!defaultSite) {
+    return siteConfig;
+  }
+
+  // Union existing patterns with default patterns (avoid duplicates)
+  const patternSet = new Set([...siteConfig.urlPatterns, ...defaultSite.urlPatterns]);
+  const mergedPatterns = Array.from(patternSet);
+
+  return {
+    ...siteConfig,
+    urlPatterns: mergedPatterns,
+  };
+}
+
+/**
  * Merge partial config updates with existing config
+ * Ensures localhost and other default patterns are preserved even from old stored configs
  */
 export function mergeSiteConfig(
   existing: SiteConfiguration,
   updates: Partial<SiteConfiguration>
 ): SiteConfiguration {
+  const mergedSites: Record<SupportedSite, SiteConfig> = {
+    ...existing.sites,
+    ...(updates.sites || {}),
+  };
+
+  // Ensure all sites include default patterns (backward compatibility)
+  const sitesWithDefaults: Record<SupportedSite, SiteConfig> = {} as Record<
+    SupportedSite,
+    SiteConfig
+  >;
+  for (const [siteId, siteConfig] of Object.entries(mergedSites)) {
+    sitesWithDefaults[siteId as SupportedSite] = ensureDefaultPatternsForSite(
+      siteId as SupportedSite,
+      siteConfig
+    );
+  }
+
   return {
     ...existing,
     ...updates,
-    sites: {
-      ...existing.sites,
-      ...(updates.sites || {}),
-    },
+    sites: sitesWithDefaults,
     lastUpdated: new Date().toISOString(),
   };
 }

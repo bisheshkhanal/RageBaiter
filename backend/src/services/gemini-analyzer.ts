@@ -31,6 +31,12 @@ type GeminiStructuredResponse = {
   fallacies: string[];
   topic: string;
   confidence: number;
+  counter_argument: string;
+  logic_failure: string;
+  claim: string;
+  mechanism: string;
+  data_check: string;
+  socratic_challenge: string;
 };
 
 type GeminiApiResponse = {
@@ -64,20 +70,31 @@ type GeminiAnalyzerOptions = {
   logger?: GeminiAnalyzerLogger;
 };
 
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_MAX_INPUT_CHARS = 2_000;
-const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_TIMEOUT_MS = 25_000;
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 200;
 
 const FEW_SHOT_EXAMPLES = [
   {
-    input: "The media lies to protect elite bureaucrats. Trust real patriots, not institutions.",
+    input:
+      "If I told you that a young man stabbed another young man to death for telling him that he was in the wrong seat, and then I told you that one young man in this altercation was white and the other black, and then I asked you to guess the race of the assailant, every single person would know the answer immediately. Young black males are violent to a wildly, outrageously disproportionate degree. That's just a fact. We all know it. And it's time that we speak honestly about it, or nothing will ever change.",
     output: {
-      tweet_vector: { social: -0.2, economic: 0.3, populist: 0.8 },
-      fallacies: ["Appeal to Emotion"],
-      topic: "Media Trust",
-      confidence: 0.74,
+      tweet_vector: { social: -0.8, economic: 0.1, populist: 0.7 },
+      fallacies: ["Spurious Correlation", "Ecological Fallacy", "Appeal to Common Knowledge"],
+      topic: "Race and Violence",
+      confidence: 0.92,
+      counter_argument:
+        "This statement presents a statistical disparity as a racial trait, deliberately ignoring the stronger predictive variable: socioeconomic status. When researchers control for poverty, education, and neighborhood stability, the racial gap in violence rates shrinks or disappears entirely. Violence correlates most strongly with economic disadvantage, not race.",
+      logic_failure: "Confounding Variable",
+      claim: "Young black males are violent to a wildly, outrageously disproportionate degree.",
+      mechanism:
+        "This statement uses Spurious Correlation. It presents a statistical disparity as a racial trait, deliberately ignoring the stronger predictive variable: Socioeconomic Status.",
+      data_check:
+        "When researchers control for poverty, education, and neighborhood stability, the racial gap in violence rates shrinks or disappears entirely. Violence correlates most strongly with economic disadvantage, not race.",
+      socratic_challenge:
+        "If poverty and proximity to crime are the strongest predictors of violence regardless of race, why does this post focus exclusively on the racial identity of the subject? Is the goal to solve violence, or to assign blame?",
     },
   },
   {
@@ -87,6 +104,16 @@ const FEW_SHOT_EXAMPLES = [
       fallacies: ["False Dilemma"],
       topic: "Tax Policy",
       confidence: 0.81,
+      counter_argument:
+        "Small business survival depends on many factors beyond tax rates. Countries with higher tax rates like Denmark and Germany maintain thriving small business sectors through reinvestment in infrastructure and education.",
+      logic_failure: "False Dilemma",
+      claim: "Either we slash taxes immediately or small businesses will die tomorrow.",
+      mechanism:
+        "This statement uses a False Dilemma. It presents only two extreme options (immediate tax cuts vs. total business failure), ignoring the spectrum of policy tools and timelines available.",
+      data_check:
+        "Small business survival depends on access to credit, consumer demand, supply chain stability, and regulatory clarity - not just tax rates. The SBA reports that most small business failures are caused by cash flow issues unrelated to taxation.",
+      socratic_challenge:
+        "If tax cuts alone determined small business survival, why do countries with higher tax rates maintain thriving small business sectors? What other factors might matter more?",
     },
   },
 ] as const;
@@ -169,14 +196,20 @@ const buildPrompt = (tweetText: string): string => {
   }).join("\n\n");
 
   return [
-    "You are a political tweet analyzer.",
+    "You are a political tweet analyzer that detects logical fallacies and manipulative framing.",
     "Return only JSON with this exact shape and keys:",
-    '{"tweet_vector":{"social":0,"economic":0,"populist":0},"fallacies":[""],"topic":"","confidence":0}',
+    '{"tweet_vector":{"social":0,"economic":0,"populist":0},"fallacies":[""],"topic":"","confidence":0,"counter_argument":"","logic_failure":"","claim":"","mechanism":"","data_check":"","socratic_challenge":""}',
     "Rules:",
     "- tweet_vector fields are numbers in [-1, 1]",
     "- confidence is a number in [0, 1]",
-    "- fallacies is an array of short strings",
+    "- fallacies is an array of short strings naming specific logical fallacies",
     "- topic is a concise string",
+    "- logic_failure: a short label for the primary logical failure (e.g. 'Confounding Variable', 'False Dilemma', 'Hasty Generalization')",
+    "- claim: extract the core factual claim being made in the tweet, quoted or paraphrased directly",
+    "- mechanism: 2-3 sentences explaining HOW the logical manipulation works. Name the specific fallacy technique and explain what variable or context is being ignored or distorted.",
+    "- data_check: 2-3 sentences presenting concrete counter-evidence, research findings, or data that challenges the claim. Be specific with references to studies, statistics, or historical examples.",
+    "- socratic_challenge: a pointed question (1-2 sentences) that exposes the logical gap in the argument. Frame it to make the reader think critically about the post's real intent.",
+    "- counter_argument: 2-3 sentence rebuttal addressing the specific claims with evidence",
     "- no markdown, no prose, no code fences",
     "- best effort for non-English text",
     examples,
@@ -242,6 +275,14 @@ const toStrictStructured = (value: unknown): GeminiStructuredResponse | null => 
     return null;
   }
 
+  const counterArgument = typeof value.counter_argument === "string" ? value.counter_argument : "";
+  const logicFailure = typeof value.logic_failure === "string" ? value.logic_failure : "";
+  const claim = typeof value.claim === "string" ? value.claim : "";
+  const mechanism = typeof value.mechanism === "string" ? value.mechanism : "";
+  const dataCheck = typeof value.data_check === "string" ? value.data_check : "";
+  const socraticChallenge =
+    typeof value.socratic_challenge === "string" ? value.socratic_challenge : "";
+
   return {
     tweet_vector: {
       social: vector.social,
@@ -251,6 +292,12 @@ const toStrictStructured = (value: unknown): GeminiStructuredResponse | null => 
     fallacies,
     topic,
     confidence,
+    counter_argument: counterArgument,
+    logic_failure: logicFailure,
+    claim,
+    mechanism,
+    data_check: dataCheck,
+    socratic_challenge: socraticChallenge,
   };
 };
 
@@ -413,12 +460,13 @@ export const createGeminiTweetAnalyzer = (options: GeminiAnalyzerOptions = {}) =
   const maxInputChars = options.maxInputChars ?? DEFAULT_MAX_INPUT_CHARS;
   const timeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
   const rateLimiter = options.rateLimiter ?? sharedRateLimiter;
-  const apiKey = options.apiKey ?? readEnv("GEMINI_API_KEY") ?? "";
 
   return async (
     _tweetId: string,
     tweetText: string
   ): Promise<Omit<TweetAnalysis, "analyzedAt" | "expiresAt"> | null> => {
+    const apiKey = (options.apiKey ?? readEnv("GEMINI_API_KEY") ?? "").trim();
+
     const trimmedText = tweetText.trim();
     if (trimmedText.length === 0) {
       return null;
@@ -451,6 +499,12 @@ export const createGeminiTweetAnalyzer = (options: GeminiAnalyzerOptions = {}) =
           fallacies: structured.fallacies,
           topic: structured.topic,
           confidence: clamp(structured.confidence, 0, 1),
+          counterArgument: structured.counter_argument,
+          logicFailure: structured.logic_failure,
+          claim: structured.claim,
+          mechanism: structured.mechanism,
+          dataCheck: structured.data_check,
+          socraticChallenge: structured.socratic_challenge,
         };
       } catch (error) {
         const retryableError = toRetryableError(error);

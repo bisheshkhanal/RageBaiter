@@ -453,6 +453,7 @@ const PIPELINE_POLITICAL_TERMS = [
   "liberal",
   "conservative",
   "immigration",
+  "immigrant",
   "abortion",
   "gun control",
   "climate change",
@@ -467,6 +468,29 @@ const PIPELINE_POLITICAL_TERMS = [
   "fascism",
   "communism",
   "democracy",
+  "ice agent",
+  "deport",
+  "border",
+  "race",
+  "racist",
+  "racial",
+  "violent",
+  "violence",
+  "protest",
+  "radical",
+  "socialist",
+  "corrupt",
+  "revolution",
+  "political",
+  "disproportionate",
+  "police state",
+  "citizen",
+  "warrant",
+  "sex offender",
+  "illegally",
+  "traditional values",
+  "mainstream media",
+  "establishment",
 ];
 
 const builtinKeywordFilter = (
@@ -486,7 +510,7 @@ const builtinKeywordFilter = (
 let pipelineConfig: PipelineConfig = {
   maxConcurrency: 5,
   backendUrl: "http://localhost:3001",
-  backendTimeoutMs: 10_000,
+  backendTimeoutMs: 30_000,
   politicalSensitivity: "medium",
 };
 
@@ -514,6 +538,12 @@ const pipeline = new PipelineOrchestrator({
       tweetId: payload.tweetId,
       level: payload.level as "none" | "low" | "medium" | "critical",
       reason: payload.reason,
+      ...(payload.counterArgument ? { counterArgument: payload.counterArgument } : {}),
+      ...(payload.logicFailure ? { logicFailure: payload.logicFailure } : {}),
+      ...(payload.claim ? { claim: payload.claim } : {}),
+      ...(payload.mechanism ? { mechanism: payload.mechanism } : {}),
+      ...(payload.dataCheck ? { dataCheck: payload.dataCheck } : {}),
+      ...(payload.socraticChallenge ? { socraticChallenge: payload.socraticChallenge } : {}),
       ...(payload.tweetVector ? { tweetVector: payload.tweetVector } : {}),
     });
   },
@@ -551,9 +581,13 @@ const routeMessage = async (
           ...(tabUrl ? { tabUrl } : {}),
         })
         .then((result) => {
-          if (result.error) {
-            console.warn("[RageBaiter][Pipeline] Error:", result.tweetId, result.error);
-          }
+          console.log(
+            "[RageBaiter][Pipeline]",
+            result.tweetId,
+            "stage:",
+            result.stage,
+            result.error ?? ""
+          );
         });
 
       return ok();

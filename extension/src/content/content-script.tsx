@@ -4,6 +4,7 @@ import {
   type AnalyzeResultMessage,
   type InterventionTriggerMessage,
   type MessageAck,
+  type PoliticalVectorPayload,
 } from "../messaging/protocol.js";
 import {
   sendFeedbackSubmitted,
@@ -17,6 +18,47 @@ import { InterventionPopup, type InterventionLevel } from "../components/Interve
 const LEGACY_TWEET_SELECTOR = 'article[data-testid="tweet"]';
 const FALLBACK_TWEET_SELECTOR = 'article[role="article"]';
 const URL_CHECK_INTERVAL_MS = 500;
+const BRIDGE_REQUEST_TYPE = "RAGEBAITER_BRIDGE_GET_STATE";
+const BRIDGE_STATE_TYPE = "RAGEBAITER_BRIDGE_STATE";
+const BRIDGE_UPDATE_TYPE = "RAGEBAITER_BRIDGE_UPDATE";
+const BRIDGE_PAGE_SOURCE = "ragebaiter-visualizer";
+const BRIDGE_EXTENSION_SOURCE = "ragebaiter-extension";
+
+type StoredUserVector = PoliticalVectorPayload & {
+  x: number;
+  y: number;
+};
+
+type BridgeHistoryEvent = {
+  id: string;
+  tweetId: string;
+  feedback: "acknowledged" | "agreed" | "dismissed";
+  timestamp: string;
+  tweetVector: PoliticalVectorPayload;
+  beforeVector: PoliticalVectorPayload;
+  afterVector: PoliticalVectorPayload;
+  delta: PoliticalVectorPayload;
+  syncedAt?: string;
+  syncAttempts: number;
+};
+
+type BridgeStatePayload = {
+  userVector: StoredUserVector | null;
+  vectorHistory: BridgeHistoryEvent[];
+};
+
+type BridgeRequestMessage = {
+  source: typeof BRIDGE_PAGE_SOURCE;
+  type: typeof BRIDGE_REQUEST_TYPE;
+  requestId?: string;
+};
+
+type BridgeResponseMessage = {
+  source: typeof BRIDGE_EXTENSION_SOURCE;
+  type: typeof BRIDGE_STATE_TYPE | typeof BRIDGE_UPDATE_TYPE;
+  requestId?: string;
+  payload: BridgeStatePayload;
+};
 
 type SelectorFeatureFlags = {
   legacyTweetSelectorEnabled: boolean;
@@ -74,6 +116,113 @@ const isDebugEnvironment = (): boolean => {
 
   const testGlobal = globalThis as { __vitest_worker__?: unknown; vitest?: unknown };
   return Boolean(testGlobal.__vitest_worker__ || testGlobal.vitest);
+};
+
+const isLocalBridgeHost = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+};
+
+const readBridgeState = async (): Promise<BridgeStatePayload> => {
+  if (typeof chrome === "undefined" || !chrome.storage?.local) {
+    return {
+      userVector: null,
+      vectorHistory: [],
+    };
+  }
+
+  const stored = (await chrome.storage.local.get(["userVector", "vectorHistory"])) as {
+    userVector?: StoredUserVector;
+    vectorHistory?: BridgeHistoryEvent[];
+  };
+
+  return {
+    userVector: stored.userVector ?? null,
+    vectorHistory: Array.isArray(stored.vectorHistory) ? stored.vectorHistory : [],
+  };
+};
+
+const postBridgeState = async (
+  type: BridgeResponseMessage["type"],
+  requestId?: string
+): Promise<void> => {
+  const payload = await readBridgeState();
+  const message: BridgeResponseMessage = {
+    source: BRIDGE_EXTENSION_SOURCE,
+    type,
+    payload,
+    ...(requestId ? { requestId } : {}),
+  };
+  window.postMessage(message, window.location.origin);
+};
+
+const registerVisualizerBridge = (): { stop: () => void } | null => {
+  if (!isLocalBridgeHost()) {
+    return null;
+  }
+
+  if (
+    typeof chrome === "undefined" ||
+    !chrome.storage?.local ||
+    !chrome.storage?.onChanged?.addListener ||
+    !chrome.storage?.onChanged?.removeListener
+  ) {
+    return null;
+  }
+
+  const onWindowMessage = (event: MessageEvent<unknown>) => {
+    if (event.source !== window || event.origin !== window.location.origin) {
+      return;
+    }
+
+    const data = event.data as Partial<BridgeRequestMessage> | undefined;
+    if (!data || data.source !== BRIDGE_PAGE_SOURCE || data.type !== BRIDGE_REQUEST_TYPE) {
+      return;
+    }
+
+    void postBridgeState(
+      BRIDGE_STATE_TYPE,
+      typeof data.requestId === "string" ? data.requestId : undefined
+    );
+  };
+
+  const onStorageChanged = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    areaName: string
+  ) => {
+    if (areaName !== "local") {
+      return;
+    }
+
+    if (!changes.userVector && !changes.vectorHistory) {
+      return;
+    }
+
+    void postBridgeState(BRIDGE_UPDATE_TYPE);
+  };
+
+  let active = true;
+
+  const stop = () => {
+    if (!active) {
+      return;
+    }
+
+    active = false;
+    window.removeEventListener("message", onWindowMessage);
+    chrome.storage.onChanged.removeListener(onStorageChanged);
+    window.__ragebaiterVisualizerBridgeStop = undefined;
+  };
+
+  window.addEventListener("message", onWindowMessage);
+  chrome.storage.onChanged.addListener(onStorageChanged);
+  window.addEventListener("pagehide", stop, { once: true });
+  window.addEventListener("beforeunload", stop, { once: true });
+
+  return { stop };
 };
 
 const emitSelectorMissTelemetry = (tweetSelectors: string[], reason: string): void => {
@@ -319,11 +468,37 @@ const getEngagementMetrics = (
   };
 };
 
+const deriveFallbackTweetId = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
+  const text = getTweetText(tweetElement, tweetSelectors);
+  const author = getAuthorHandle(tweetElement, tweetSelectors);
+  const timestamp = getTimestamp(tweetElement, tweetSelectors);
+
+  const parts = [author, timestamp, text.slice(0, 50)].filter(Boolean);
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  const composite = parts.join("|");
+  let hash = 0;
+  for (let i = 0; i < composite.length; i++) {
+    const char = composite.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+
+  return `fallback_${Math.abs(hash)}`;
+};
+
 export const extractTweetPayload = (
   tweetElement: HTMLElement,
   tweetSelectors: string[] = DEFAULT_TWEET_SELECTORS
 ): TweetScrapePayload | null => {
-  const tweetId = getTweetId(tweetElement, tweetSelectors);
+  let tweetId = getTweetId(tweetElement, tweetSelectors);
+
+  if (!tweetId) {
+    tweetId = deriveFallbackTweetId(tweetElement, tweetSelectors);
+  }
 
   if (!tweetId) {
     return null;
@@ -348,12 +523,22 @@ const sendTweetToServiceWorker = (payload: TweetScrapePayload): void => {
   });
 };
 
+type AnalysisCardFields = {
+  counterArgument?: string | undefined;
+  logicFailure?: string | undefined;
+  claim?: string | undefined;
+  mechanism?: string | undefined;
+  dataCheck?: string | undefined;
+  socraticChallenge?: string | undefined;
+};
+
 const injectInterventionUI = (
   tweetElement: HTMLElement,
   level: string,
   reason: string,
   tweetId: string,
-  tweetVector?: { social: number; economic: number; populist: number }
+  tweetVector?: { social: number; economic: number; populist: number },
+  analysisFields?: AnalysisCardFields
 ): void => {
   if (tweetElement.dataset.ragebaiterUi === "true") {
     return;
@@ -363,9 +548,18 @@ const injectInterventionUI = (
     return;
   }
 
+  const accentColor = level === "high" ? "#ef4444" : level === "medium" ? "#f59e0b" : "#f59e0b";
+
+  tweetElement.style.outline = `2px solid ${accentColor}`;
+  tweetElement.style.outlineOffset = "-2px";
+  tweetElement.style.borderRadius = "12px";
+  tweetElement.style.position = "relative";
+  tweetElement.style.background = `${accentColor}08`;
+
   const container = document.createElement("div");
   container.className = "ragebaiter-intervention-container";
-  tweetElement.prepend(container);
+  container.style.padding = "8px 0 0";
+  tweetElement.append(container);
   tweetElement.dataset.ragebaiterUi = "true";
 
   const root = createRoot(container);
@@ -374,10 +568,22 @@ const injectInterventionUI = (
     ["low", "medium", "high"].includes(level) ? level : "low"
   ) as InterventionLevel;
 
+  const clearHighlight = () => {
+    tweetElement.style.outline = "";
+    tweetElement.style.outlineOffset = "";
+    tweetElement.style.background = "";
+  };
+
   root.render(
     <InterventionPopup
       level={safeLevel}
       reason={reason}
+      counterArgument={analysisFields?.counterArgument}
+      logicFailure={analysisFields?.logicFailure}
+      claim={analysisFields?.claim}
+      mechanism={analysisFields?.mechanism}
+      dataCheck={analysisFields?.dataCheck}
+      socraticChallenge={analysisFields?.socraticChallenge}
       onDismiss={() => {
         if (tweetVector) {
           void sendFeedbackSubmitted({
@@ -390,6 +596,7 @@ const injectInterventionUI = (
           });
         }
         container.remove();
+        clearHighlight();
         tweetElement.dataset.ragebaiterUi = "dismissed";
       }}
       onProceed={() => {
@@ -404,6 +611,7 @@ const injectInterventionUI = (
           });
         }
         container.remove();
+        clearHighlight();
         tweetElement.dataset.ragebaiterUi = "acknowledged";
       }}
       onAgree={() => {
@@ -421,6 +629,10 @@ const injectInterventionUI = (
         });
 
         tweetElement.dataset.ragebaiterUi = "agreed";
+        setTimeout(() => {
+          container.remove();
+          clearHighlight();
+        }, 800);
       }}
       onDisagree={() => {
         if (!tweetVector) {
@@ -437,6 +649,10 @@ const injectInterventionUI = (
         });
 
         tweetElement.dataset.ragebaiterUi = "dismissed";
+        setTimeout(() => {
+          container.remove();
+          clearHighlight();
+        }, 800);
       }}
     />
   );
@@ -476,7 +692,15 @@ const applyInterventionLevel = (
       message.payload.level,
       message.payload.reason,
       message.payload.tweetId,
-      message.payload.tweetVector
+      message.payload.tweetVector,
+      {
+        counterArgument: message.payload.counterArgument,
+        logicFailure: message.payload.logicFailure,
+        claim: message.payload.claim,
+        mechanism: message.payload.mechanism,
+        dataCheck: message.payload.dataCheck,
+        socraticChallenge: message.payload.socraticChallenge,
+      }
     );
   }
 
@@ -489,7 +713,15 @@ const applyInterventionLevel = (
       level,
       message.payload.topic,
       message.payload.tweetId,
-      message.payload.tweetVector
+      message.payload.tweetVector,
+      {
+        counterArgument: message.payload.counterArgument,
+        logicFailure: message.payload.logicFailure,
+        claim: message.payload.claim,
+        mechanism: message.payload.mechanism,
+        dataCheck: message.payload.dataCheck,
+        socraticChallenge: message.payload.socraticChallenge,
+      }
     );
   }
 
@@ -591,6 +823,13 @@ export const startTwitterScraper = (): ScraperController => {
     }
 
     observedTweetElements.add(tweetElement);
+
+    // Immediate-processing fallback: attempt to process right away
+    // in case IntersectionObserver callback does not fire promptly.
+    // Dedupe guards (processedTweetIds, dataset.ragebaiterProcessed) prevent duplicates.
+    processTweetElement(tweetElement);
+
+    // Keep IntersectionObserver path for current architecture compatibility.
     intersectionObserver.observe(tweetElement);
   };
 
@@ -660,8 +899,6 @@ export const startTwitterScraper = (): ScraperController => {
 
     if (tweets.length === 0) {
       emitSelectorMissTelemetry(tweetSelectors, "initial-scan-no-match");
-      setScraperDisabledDebugFlag(true);
-      stop();
       return;
     }
 
@@ -737,12 +974,20 @@ declare global {
     __ragebaiterSiteConfig?: SiteConfiguration;
     __ragebaiterSelectorFeatureFlags?: Partial<SelectorFeatureFlags>;
     __RAGEBAITER_SCRAPER_DISABLED__?: boolean;
+    __ragebaiterVisualizerBridgeStop?: (() => void) | undefined;
   }
 }
 
 const checkAndInitialize = async (): Promise<void> => {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return;
+  }
+
+  if (!window.__ragebaiterVisualizerBridgeStop) {
+    const bridge = registerVisualizerBridge();
+    if (bridge) {
+      window.__ragebaiterVisualizerBridgeStop = bridge.stop;
+    }
   }
 
   try {
@@ -770,11 +1015,7 @@ const checkAndInitialize = async (): Promise<void> => {
   }
 };
 
-if (
-  typeof window !== "undefined" &&
-  typeof document !== "undefined" &&
-  /(^|\.)x\.com$|(^|\.)twitter\.com$/.test(window.location.hostname)
-) {
+if (typeof window !== "undefined" && typeof document !== "undefined") {
   void checkAndInitialize();
 }
 

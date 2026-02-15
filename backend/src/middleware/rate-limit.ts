@@ -37,7 +37,24 @@ const getLimit = (): number => {
   return Math.floor(parsed);
 };
 
+const isLocalhostRequest = (headers: Headers): boolean => {
+  const origin = (headers.get("origin") ?? "").toLowerCase();
+  const host = (headers.get("host") ?? "").toLowerCase();
+
+  return (
+    origin.includes("localhost") ||
+    origin.includes("127.0.0.1") ||
+    host.includes("localhost") ||
+    host.includes("127.0.0.1")
+  );
+};
+
 export const rateLimitMiddleware: MiddlewareHandler = async (c, next) => {
+  if (c.req.path === "/api/analyze" && isLocalhostRequest(c.req.raw.headers)) {
+    await next();
+    return;
+  }
+
   const now = Date.now();
   const limit = getLimit();
   const key = getRateLimitKey(c.req.raw.headers);

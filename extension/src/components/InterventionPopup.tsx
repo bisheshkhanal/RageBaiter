@@ -6,6 +6,12 @@ export type InterventionLevel = "low" | "medium" | "high";
 export interface InterventionPopupProps {
   level: InterventionLevel;
   reason: string;
+  counterArgument?: string | undefined;
+  logicFailure?: string | undefined;
+  claim?: string | undefined;
+  mechanism?: string | undefined;
+  dataCheck?: string | undefined;
+  socraticChallenge?: string | undefined;
   onDismiss: () => void;
   onProceed: () => void;
   onAgree: () => void;
@@ -15,126 +21,267 @@ export interface InterventionPopupProps {
 export const InterventionPopup: React.FC<InterventionPopupProps> = ({
   level,
   reason,
+  counterArgument: counterArgumentProp,
+  logicFailure: logicFailureProp,
+  claim: claimProp,
+  mechanism: mechanismProp,
+  dataCheck: dataCheckProp,
+  socraticChallenge: socraticChallengeProp,
   onDismiss,
   onProceed,
   onAgree,
   onDisagree,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [feedbackState, setFeedbackState] = useState<"idle" | "agreed" | "disagreed">("idle");
 
-  const getBorderColor = () => {
+  const logicFailure =
+    logicFailureProp && logicFailureProp.length > 0 ? logicFailureProp : "Manipulative Framing";
+
+  const claimText =
+    claimProp && claimProp.length > 0
+      ? claimProp
+      : reason && reason !== "DEMO_PREVIEW"
+        ? reason
+        : "This post makes a claim designed to provoke an emotional response.";
+
+  const mechanismText =
+    mechanismProp && mechanismProp.length > 0
+      ? mechanismProp
+      : "This post uses emotionally loaded framing that can narrow your perspective.";
+
+  const dataCheckText =
+    dataCheckProp && dataCheckProp.length > 0
+      ? dataCheckProp
+      : counterArgumentProp && counterArgumentProp.length > 0
+        ? counterArgumentProp
+        : "Consider what credible evidence could support the opposite interpretation of this claim.";
+
+  const socraticText =
+    socraticChallengeProp && socraticChallengeProp.length > 0
+      ? socraticChallengeProp
+      : "What specific evidence would change your mind, and what is the strongest argument from the other side?";
+
+  const accentColor = (() => {
     switch (level) {
       case "high":
-        return "border-red-500";
+        return "#ef4444";
       case "medium":
-        return "border-orange-500";
+        return "#f59e0b";
       case "low":
-        return "border-yellow-500";
+        return "#f59e0b";
       default:
-        return "border-gray-500";
+        return "#6b7280";
     }
+  })();
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize: "11px",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.8px",
+    marginBottom: "4px",
   };
 
-  const getBgColor = () => {
-    switch (level) {
-      case "high":
-        return "bg-red-50";
-      case "medium":
-        return "bg-orange-50";
-      case "low":
-        return "bg-yellow-50";
-      default:
-        return "bg-gray-50";
-    }
-  };
-
-  const getIcon = () => {
-    switch (level) {
-      case "high":
-        return "🛑";
-      case "medium":
-        return "⚠️";
-      case "low":
-        return "✋";
-      default:
-        return "ℹ️";
-    }
+  const bodyText: React.CSSProperties = {
+    fontSize: "13px",
+    color: "#94a3b8",
+    lineHeight: "1.55",
   };
 
   return (
     <div
-      className={`font-sans rounded-lg shadow-lg p-4 mb-4 border-l-4 ${getBorderColor()} ${getBgColor()} text-gray-800 transition-all duration-300 ease-in-out`}
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        background: "#1a1a2e",
+        borderRadius: "12px",
+        border: `1px solid ${accentColor}40`,
+        boxShadow: `0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px ${accentColor}20`,
+        color: "#e2e8f0",
+        marginBottom: "12px",
+        overflow: "hidden",
+        fontSize: "14px",
+        lineHeight: "1.5",
+      }}
       data-testid="intervention-popup"
       role="alert"
     >
-      <div className="flex justify-between items-start">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl" role="img" aria-label="alert icon">
-            {getIcon()}
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 16px 10px",
+          borderBottom: `1px solid ${accentColor}30`,
+          background: `linear-gradient(135deg, ${accentColor}15, transparent)`,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "20px" }} role="img" aria-label="warning">
+            {"\u26A0\uFE0F"}
           </span>
           <div>
-            <h3 className="font-bold text-lg">Potential Rage Bait Detected</h3>
-            <p className="text-sm text-gray-600">
-              This content may be designed to provoke an emotional response.
-            </p>
+            <div
+              style={{
+                ...sectionLabel,
+                color: accentColor,
+                letterSpacing: "1.2px",
+                marginBottom: "2px",
+              }}
+            >
+              Logic Failure: {logicFailure}
+            </div>
+            <div style={{ fontSize: "13px", fontWeight: 600, color: "#94a3b8" }}>
+              RageBaiter Analysis
+            </div>
           </div>
         </div>
         <button
           onClick={onDismiss}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          aria-label="Dismiss intervention"
+          style={{
+            background: "none",
+            border: "none",
+            color: "#64748b",
+            cursor: "pointer",
+            fontSize: "18px",
+            padding: "4px",
+            lineHeight: 1,
+          }}
+          aria-label="Dismiss"
         >
-          ✕
+          {"\u2715"}
         </button>
       </div>
 
-      <div className="mt-3">
-        <p className="font-medium">Analysis:</p>
-        <p className="text-sm italic mb-2">{reason}</p>
-        <div className="flex items-center gap-2 mt-2 mb-2">
-          <button
-            onClick={onAgree}
-            className="text-xs bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-1 rounded hover:bg-emerald-200 transition-colors"
-            data-testid="feedback-agree-button"
+      {/* Body */}
+      <div style={{ padding: "14px 16px" }}>
+        {/* The Claim */}
+        <div style={{ marginBottom: "14px" }}>
+          <div style={{ ...sectionLabel, color: accentColor }}>The Claim</div>
+          <div
+            style={{
+              ...bodyText,
+              fontStyle: "italic",
+              color: "#cbd5e1",
+              borderLeft: `3px solid ${accentColor}60`,
+              paddingLeft: "10px",
+            }}
           >
-            Agree
-          </button>
-          <button
-            onClick={onDisagree}
-            className="text-xs bg-rose-100 border border-rose-300 text-rose-800 px-3 py-1 rounded hover:bg-rose-200 transition-colors"
-            data-testid="feedback-dismiss-button"
-          >
-            Disagree
-          </button>
+            {"\u201C"}
+            {claimText}
+            {"\u201D"}
+          </div>
         </div>
 
-        {isExpanded ? (
-          <div className="mt-2 animate-fade-in">
-            <p className="font-medium text-sm mt-2">Socratic Question:</p>
-            <p className="text-sm mb-3">
-              How might this content be framing the issue to elicit a specific reaction?
-            </p>
+        {/* The Mechanism */}
+        <div style={{ marginBottom: "14px" }}>
+          <div style={{ ...sectionLabel, color: "#60a5fa" }}>The Mechanism</div>
+          <div style={bodyText}>{mechanismText}</div>
+        </div>
+
+        {/* The Data Check */}
+        <div style={{ marginBottom: "14px" }}>
+          <div style={{ ...sectionLabel, color: "#34d399" }}>The Data Check</div>
+          <div style={bodyText}>{dataCheckText}</div>
+        </div>
+
+        {/* Socratic Challenge */}
+        <div
+          style={{
+            marginBottom: "16px",
+            background: "#0f172a",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            border: "1px solid #334155",
+          }}
+        >
+          <div style={{ ...sectionLabel, color: "#a78bfa" }}>Socratic Challenge</div>
+          <div style={{ ...bodyText, fontStyle: "italic", color: "#e2e8f0" }}>
+            {"\u201C"}
+            {socraticText}
+            {"\u201D"}
+          </div>
+        </div>
+
+        {/* Impact / Feedback */}
+        <div style={{ borderTop: "1px solid #334155", paddingTop: "12px" }}>
+          <div style={{ ...sectionLabel, color: "#64748b", marginBottom: "8px" }}>Impact</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              onClick={() => {
+                if (feedbackState !== "idle") return;
+                onAgree();
+                setFeedbackState("agreed");
+              }}
+              disabled={feedbackState !== "idle"}
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: "6px 16px",
+                borderRadius: "6px",
+                border: "1px solid #065f46",
+                background: feedbackState === "agreed" ? "#065f46" : "#064e3b",
+                color: "#6ee7b7",
+                cursor: feedbackState !== "idle" ? "not-allowed" : "pointer",
+                opacity: feedbackState !== "idle" && feedbackState !== "agreed" ? 0.4 : 1,
+                transition: "all 0.15s",
+              }}
+              data-testid="feedback-agree-button"
+            >
+              {feedbackState === "agreed" ? "Agreed \u2713" : "Agree"}
+            </button>
+            <button
+              onClick={() => {
+                if (feedbackState !== "idle") return;
+                onDisagree();
+                setFeedbackState("disagreed");
+              }}
+              disabled={feedbackState !== "idle"}
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: "6px 16px",
+                borderRadius: "6px",
+                border: "1px solid #991b1b",
+                background: feedbackState === "disagreed" ? "#991b1b" : "#7f1d1d",
+                color: "#fca5a5",
+                cursor: feedbackState !== "idle" ? "not-allowed" : "pointer",
+                opacity: feedbackState !== "idle" && feedbackState !== "disagreed" ? 0.4 : 1,
+                transition: "all 0.15s",
+              }}
+              data-testid="feedback-dismiss-button"
+            >
+              {feedbackState === "disagreed" ? "Disagreed \u2713" : "Disagree"}
+            </button>
             <button
               onClick={onProceed}
-              className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-100 transition-colors mr-2"
+              style={{
+                fontSize: "12px",
+                fontWeight: 500,
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "1px solid #334155",
+                background: "transparent",
+                color: "#64748b",
+                cursor: "pointer",
+                marginLeft: "auto",
+                transition: "all 0.15s",
+              }}
             >
-              View Content Anyway
-            </button>
-            <button
-              onClick={() => setIsExpanded(false)}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              Show Less
+              Dismiss
             </button>
           </div>
-        ) : (
-          <button
-            onClick={() => setIsExpanded(true)}
-            className="text-sm text-blue-600 font-medium hover:underline mt-1"
-          >
-            Read More & Reflect
-          </button>
-        )}
+          {feedbackState !== "idle" ? (
+            <div style={{ fontSize: "11px", color: "#34d399", marginTop: "8px" }}>
+              Your political vector has been updated.
+            </div>
+          ) : (
+            <div style={{ fontSize: "11px", color: "#475569", marginTop: "8px" }}>
+              Agree/Disagree updates your political compass vector.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

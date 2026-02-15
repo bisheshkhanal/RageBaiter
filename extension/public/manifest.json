@@ -4,14 +4,28 @@
   "version": "0.0.1",
   "description": "Detect political echo chambers and logical fallacies on Twitter/X with Socratic interventions",
   "permissions": ["storage", "activeTab", "sidePanel"],
-  "host_permissions": ["*://x.com/*", "*://twitter.com/*"],
+  "host_permissions": [
+    "*://x.com/*",
+    "*://twitter.com/*",
+    "http://localhost/*",
+    "https://localhost/*",
+    "http://127.0.0.1/*",
+    "https://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "src/background/service-worker.ts",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["*://x.com/*", "*://twitter.com/*"],
+      "matches": [
+        "*://x.com/*",
+        "*://twitter.com/*",
+        "http://localhost/*",
+        "https://localhost/*",
+        "http://127.0.0.1/*",
+        "https://127.0.0.1/*"
+      ],
       "js": ["src/content/content-script.tsx"],
       "run_at": "document_idle"
     }
