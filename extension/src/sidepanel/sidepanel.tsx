@@ -31,6 +31,16 @@ type UserVector = {
   y: number;
 };
 
+type FeedbackHistoryItem = {
+  id: string;
+  tweetId: string;
+  feedback: "acknowledged" | "agreed" | "dismissed";
+  timestamp: string;
+  beforeVector: { social: number; economic: number; populist: number };
+  afterVector: { social: number; economic: number; populist: number };
+  syncAttempts: number;
+};
+
 export function SidePanel(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<Tab>("quiz");
   const [quizState, setQuizState] = useState<QuizState>("intro");
@@ -41,16 +51,21 @@ export function SidePanel(): React.ReactElement {
   const [privacyStatus, setPrivacyStatus] = useState<string | null>(null);
   const [privacyError, setPrivacyError] = useState<string | null>(null);
   const [isPrivacyActionRunning, setIsPrivacyActionRunning] = useState(false);
+  const [vectorHistory, setVectorHistory] = useState<FeedbackHistoryItem[]>([]);
 
   useEffect(() => {
     const loadStoredData = async () => {
       const [vectorResult, quizResult] = await Promise.all([
-        chrome.storage.local.get("userVector"),
+        chrome.storage.local.get(["userVector", "vectorHistory"]),
         getStoredQuizResult(),
       ]);
 
       if (vectorResult.userVector) {
         setUserVector(vectorResult.userVector);
+      }
+
+      if (Array.isArray(vectorResult.vectorHistory)) {
+        setVectorHistory(vectorResult.vectorHistory);
       }
 
       if (quizResult) {
@@ -68,6 +83,32 @@ export function SidePanel(): React.ReactElement {
     };
 
     loadStoredData();
+  }, []);
+
+  useEffect(() => {
+    const handleStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string
+    ) => {
+      if (areaName !== "local") {
+        return;
+      }
+
+      const userVectorChange = changes.userVector;
+      if (userVectorChange?.newValue) {
+        setUserVector(userVectorChange.newValue as UserVector);
+      }
+
+      const vectorHistoryChange = changes.vectorHistory;
+      if (Array.isArray(vectorHistoryChange?.newValue)) {
+        setVectorHistory(vectorHistoryChange.newValue as FeedbackHistoryItem[]);
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
   }, []);
 
   const handleStartQuiz = useCallback(() => {
@@ -402,13 +443,58 @@ export function SidePanel(): React.ReactElement {
         return (
           <div className="tab-content">
             {userVector && (
-              <QuizResults
-                social={userVector.social}
-                economic={userVector.economic}
-                populist={userVector.populist}
-                onRetake={handleRetake}
-                onContinue={handleContinue}
-              />
+              <>
+                <QuizResults
+                  social={userVector.social}
+                  economic={userVector.economic}
+                  populist={userVector.populist}
+                  onRetake={handleRetake}
+                  onContinue={handleContinue}
+                />
+                <section className="settings-section" data-testid="vector-history-panel">
+                  <h3>Vector Drift History</h3>
+                  {vectorHistory.length === 0 ? (
+                    <p className="setting-hint" data-testid="vector-history-empty">
+                      No feedback drift events yet.
+                    </p>
+                  ) : (
+                    <div className="vector-history-list">
+                      {[...vectorHistory]
+                        .reverse()
+                        .slice(0, 8)
+                        .map((item) => (
+                          <article
+                            key={item.id}
+                            className="vector-history-item"
+                            data-testid="vector-history-item"
+                          >
+                            <div className="vector-history-head">
+                              <span className="vector-history-feedback">
+                                {item.feedback.toUpperCase()}
+                              </span>
+                              <span className="vector-history-time">
+                                {new Date(item.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="vector-history-meta">Tweet {item.tweetId}</p>
+                            <p className="vector-history-meta" data-testid="vector-history-after">
+                              ({item.afterVector.social.toFixed(2)},{" "}
+                              {item.afterVector.economic.toFixed(2)})
+                            </p>
+                            {item.syncAttempts > 0 && (
+                              <p
+                                className="vector-history-sync"
+                                data-testid="vector-history-retry-status"
+                              >
+                                Pending sync (attempts: {item.syncAttempts})
+                              </p>
+                            )}
+                          </article>
+                        ))}
+                    </div>
+                  )}
+                </section>
+              </>
             )}
           </div>
         );

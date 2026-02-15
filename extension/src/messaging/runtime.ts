@@ -3,6 +3,7 @@ import {
   MESSAGE_TYPES,
   type ExtensionMessage,
   type GlobalPauseToggledPayload,
+  type FeedbackSubmittedPayload,
   type InterventionTriggerPayload,
   type LlmConfigPayload,
   type LlmConnectionTestPayload,
@@ -181,6 +182,13 @@ export const sendQuizCompleted = (
   options?: RetryOptions
 ): Promise<MessageAck<void>> => {
   return sendRuntimeRequest(MESSAGE_TYPES.QUIZ_COMPLETED, payload, options);
+};
+
+export const sendFeedbackSubmitted = (
+  payload: FeedbackSubmittedPayload,
+  options?: RetryOptions
+): Promise<MessageAck<void>> => {
+  return sendRuntimeRequest(MESSAGE_TYPES.FEEDBACK_SUBMITTED, payload, options);
 };
 
 export const sendInterventionTriggerToTab = (

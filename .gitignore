@@ -8,7 +8,6 @@ node_modules/
 .env.*.local
 .env.*.secret
 .env.*.bak
-.env.example
 
 ## Project docs to keep private
 PRD.md

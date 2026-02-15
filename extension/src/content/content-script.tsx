@@ -5,14 +5,91 @@ import {
   type InterventionTriggerMessage,
   type MessageAck,
 } from "../messaging/protocol.js";
-import { sendTweetDetected, sendSiteConfigRequest } from "../messaging/runtime.js";
+import {
+  sendFeedbackSubmitted,
+  sendTweetDetected,
+  sendSiteConfigRequest,
+} from "../messaging/runtime.js";
 import { isExtensionActiveOnUrl, type SiteConfiguration } from "../lib/site-config.js";
-import React from "react";
 import { createRoot } from "react-dom/client";
-import { InterventionPopup, type InterventionLevel } from "../components/InterventionPopup";
+import { InterventionPopup, type InterventionLevel } from "../components/InterventionPopup.js";
 
-const TWEET_SELECTOR = 'article[data-testid="tweet"]';
+const LEGACY_TWEET_SELECTOR = 'article[data-testid="tweet"]';
+const FALLBACK_TWEET_SELECTOR = 'article[role="article"]';
 const URL_CHECK_INTERVAL_MS = 500;
+
+type SelectorFeatureFlags = {
+  legacyTweetSelectorEnabled: boolean;
+  fallbackTweetSelectorEnabled: boolean;
+};
+
+const DEFAULT_SELECTOR_FEATURE_FLAGS: SelectorFeatureFlags = {
+  legacyTweetSelectorEnabled: true,
+  fallbackTweetSelectorEnabled: true,
+};
+
+const buildTweetSelectorChain = (flags: SelectorFeatureFlags): string[] => {
+  const selectors: string[] = [];
+
+  if (flags.legacyTweetSelectorEnabled) {
+    selectors.push(LEGACY_TWEET_SELECTOR);
+  }
+
+  if (flags.fallbackTweetSelectorEnabled) {
+    selectors.push(FALLBACK_TWEET_SELECTOR);
+  }
+
+  return selectors;
+};
+
+const DEFAULT_TWEET_SELECTORS = buildTweetSelectorChain(DEFAULT_SELECTOR_FEATURE_FLAGS);
+
+const resolveSelectorFeatureFlags = (): SelectorFeatureFlags => {
+  if (typeof window === "undefined") {
+    return DEFAULT_SELECTOR_FEATURE_FLAGS;
+  }
+
+  const rawFlags = window.__ragebaiterSelectorFeatureFlags;
+
+  return {
+    legacyTweetSelectorEnabled:
+      rawFlags?.legacyTweetSelectorEnabled ??
+      DEFAULT_SELECTOR_FEATURE_FLAGS.legacyTweetSelectorEnabled,
+    fallbackTweetSelectorEnabled:
+      rawFlags?.fallbackTweetSelectorEnabled ??
+      DEFAULT_SELECTOR_FEATURE_FLAGS.fallbackTweetSelectorEnabled,
+  };
+};
+
+const getCombinedSelector = (selectors: string[]): string => selectors.join(", ");
+
+const isDebugEnvironment = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return true;
+  }
+
+  const testGlobal = globalThis as { __vitest_worker__?: unknown; vitest?: unknown };
+  return Boolean(testGlobal.__vitest_worker__ || testGlobal.vitest);
+};
+
+const emitSelectorMissTelemetry = (tweetSelectors: string[], reason: string): void => {
+  console.warn("[RageBaiter] Tweet selector miss", {
+    reason,
+    selectors: tweetSelectors,
+  });
+};
+
+const setScraperDisabledDebugFlag = (disabled: boolean): void => {
+  if (!isDebugEnvironment()) {
+    return;
+  }
+
+  window.__RAGEBAITER_SCRAPER_DISABLED__ = disabled;
+};
 
 export type EngagementMetrics = {
   likes: number;
@@ -68,33 +145,44 @@ const parseMetricCount = (rawValue: string | null | undefined): number => {
 
 const getElementsWithinTweet = <TElement extends Element>(
   tweetElement: HTMLElement,
-  selector: string
+  selector: string,
+  tweetSelectors: string[] = DEFAULT_TWEET_SELECTORS
 ): TElement[] => {
   const candidates = Array.from(tweetElement.querySelectorAll<TElement>(selector));
+  const combinedTweetSelector = getCombinedSelector(tweetSelectors);
 
   return candidates.filter((candidate) => {
-    const closestTweet = candidate.closest(TWEET_SELECTOR);
+    const closestTweet = candidate.closest(combinedTweetSelector);
     return closestTweet === tweetElement;
   });
 };
 
 const getFirstElementWithinTweet = <TElement extends Element>(
   tweetElement: HTMLElement,
-  selector: string
+  selector: string,
+  tweetSelectors: string[] = DEFAULT_TWEET_SELECTORS
 ): TElement | null => {
-  const matches = getElementsWithinTweet<TElement>(tweetElement, selector);
+  const matches = getElementsWithinTweet<TElement>(tweetElement, selector, tweetSelectors);
   return matches[0] ?? null;
 };
 
-const getStatusUrlPath = (tweetElement: HTMLElement): string => {
-  const timeElement = getFirstElementWithinTweet<HTMLTimeElement>(tweetElement, "time");
+const getStatusUrlPath = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
+  const timeElement = getFirstElementWithinTweet<HTMLTimeElement>(
+    tweetElement,
+    "time",
+    tweetSelectors
+  );
   const timeAnchor = timeElement?.closest("a");
 
   if (timeAnchor?.getAttribute("href")) {
     return timeAnchor.getAttribute("href") ?? "";
   }
 
-  const allAnchors = getElementsWithinTweet<HTMLAnchorElement>(tweetElement, "a[href]");
+  const allAnchors = getElementsWithinTweet<HTMLAnchorElement>(
+    tweetElement,
+    "a[href]",
+    tweetSelectors
+  );
 
   for (const anchor of allAnchors) {
     const href = anchor.getAttribute("href");
@@ -106,14 +194,14 @@ const getStatusUrlPath = (tweetElement: HTMLElement): string => {
   return "";
 };
 
-const getTweetId = (tweetElement: HTMLElement): string => {
-  const statusPath = getStatusUrlPath(tweetElement);
+const getTweetId = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
+  const statusPath = getStatusUrlPath(tweetElement, tweetSelectors);
   const match = statusPath.match(/\/status\/(\d+)/);
   return match?.[1] ?? "";
 };
 
-const getAuthorHandle = (tweetElement: HTMLElement): string => {
-  const statusPath = getStatusUrlPath(tweetElement);
+const getAuthorHandle = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
+  const statusPath = getStatusUrlPath(tweetElement, tweetSelectors);
   const statusPathMatch = statusPath.match(/^\/?([^/]+)\/status\/\d+/);
 
   if (statusPathMatch?.[1]) {
@@ -122,7 +210,8 @@ const getAuthorHandle = (tweetElement: HTMLElement): string => {
 
   const authorAnchor = getFirstElementWithinTweet<HTMLAnchorElement>(
     tweetElement,
-    '[data-testid="User-Name"] a[href^="/"]'
+    '[data-testid="User-Name"] a[href^="/"]',
+    tweetSelectors
   );
 
   if (!authorAnchor) {
@@ -134,24 +223,36 @@ const getAuthorHandle = (tweetElement: HTMLElement): string => {
   return handle.replace(/^@/, "");
 };
 
-const getTimestamp = (tweetElement: HTMLElement): string => {
-  const timeElement = getFirstElementWithinTweet<HTMLTimeElement>(tweetElement, "time");
+const getTimestamp = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
+  const timeElement = getFirstElementWithinTweet<HTMLTimeElement>(
+    tweetElement,
+    "time",
+    tweetSelectors
+  );
   return timeElement?.getAttribute("datetime") ?? "";
 };
 
-const getTweetText = (tweetElement: HTMLElement): string => {
+const getTweetText = (tweetElement: HTMLElement, tweetSelectors: string[]): string => {
   const textElement =
-    getFirstElementWithinTweet<HTMLElement>(tweetElement, '[data-testid="tweetText"]') ??
-    getFirstElementWithinTweet<HTMLElement>(tweetElement, "div[lang]");
+    getFirstElementWithinTweet<HTMLElement>(
+      tweetElement,
+      '[data-testid="tweetText"]',
+      tweetSelectors
+    ) ?? getFirstElementWithinTweet<HTMLElement>(tweetElement, "div[lang]", tweetSelectors);
 
   return textElement?.textContent?.trim() ?? "";
 };
 
-const findMetricByDataTestIds = (tweetElement: HTMLElement, testIds: string[]): number => {
+const findMetricByDataTestIds = (
+  tweetElement: HTMLElement,
+  testIds: string[],
+  tweetSelectors: string[]
+): number => {
   for (const testId of testIds) {
     const button = getFirstElementWithinTweet<HTMLElement>(
       tweetElement,
-      `[data-testid="${testId}"]`
+      `[data-testid="${testId}"]`,
+      tweetSelectors
     );
 
     if (!button) {
@@ -172,8 +273,16 @@ const findMetricByDataTestIds = (tweetElement: HTMLElement, testIds: string[]): 
   return 0;
 };
 
-const findMetricByAriaLabel = (tweetElement: HTMLElement, keywords: string[]): number => {
-  const buttons = getElementsWithinTweet<HTMLElement>(tweetElement, '[role="button"][aria-label]');
+const findMetricByAriaLabel = (
+  tweetElement: HTMLElement,
+  keywords: string[],
+  tweetSelectors: string[]
+): number => {
+  const buttons = getElementsWithinTweet<HTMLElement>(
+    tweetElement,
+    '[role="button"][aria-label]',
+    tweetSelectors
+  );
 
   for (const button of buttons) {
     const ariaLabel = button.getAttribute("aria-label")?.toLowerCase() ?? "";
@@ -189,16 +298,19 @@ const findMetricByAriaLabel = (tweetElement: HTMLElement, keywords: string[]): n
   return 0;
 };
 
-const getEngagementMetrics = (tweetElement: HTMLElement): EngagementMetrics => {
+const getEngagementMetrics = (
+  tweetElement: HTMLElement,
+  tweetSelectors: string[]
+): EngagementMetrics => {
   const replies =
-    findMetricByDataTestIds(tweetElement, ["reply"]) ||
-    findMetricByAriaLabel(tweetElement, ["repl", "antwort"]);
+    findMetricByDataTestIds(tweetElement, ["reply"], tweetSelectors) ||
+    findMetricByAriaLabel(tweetElement, ["repl", "antwort"], tweetSelectors);
   const retweets =
-    findMetricByDataTestIds(tweetElement, ["retweet", "unretweet"]) ||
-    findMetricByAriaLabel(tweetElement, ["repost", "retweet"]);
+    findMetricByDataTestIds(tweetElement, ["retweet", "unretweet"], tweetSelectors) ||
+    findMetricByAriaLabel(tweetElement, ["repost", "retweet"], tweetSelectors);
   const likes =
-    findMetricByDataTestIds(tweetElement, ["like", "unlike"]) ||
-    findMetricByAriaLabel(tweetElement, ["like", "gefallt"]);
+    findMetricByDataTestIds(tweetElement, ["like", "unlike"], tweetSelectors) ||
+    findMetricByAriaLabel(tweetElement, ["like", "gefallt"], tweetSelectors);
 
   return {
     likes,
@@ -207,8 +319,11 @@ const getEngagementMetrics = (tweetElement: HTMLElement): EngagementMetrics => {
   };
 };
 
-export const extractTweetPayload = (tweetElement: HTMLElement): TweetScrapePayload | null => {
-  const tweetId = getTweetId(tweetElement);
+export const extractTweetPayload = (
+  tweetElement: HTMLElement,
+  tweetSelectors: string[] = DEFAULT_TWEET_SELECTORS
+): TweetScrapePayload | null => {
+  const tweetId = getTweetId(tweetElement, tweetSelectors);
 
   if (!tweetId) {
     return null;
@@ -216,10 +331,10 @@ export const extractTweetPayload = (tweetElement: HTMLElement): TweetScrapePaylo
 
   return {
     tweetId,
-    tweetText: getTweetText(tweetElement),
-    authorHandle: getAuthorHandle(tweetElement),
-    timestamp: getTimestamp(tweetElement),
-    engagementMetrics: getEngagementMetrics(tweetElement),
+    tweetText: getTweetText(tweetElement, tweetSelectors),
+    authorHandle: getAuthorHandle(tweetElement, tweetSelectors),
+    timestamp: getTimestamp(tweetElement, tweetSelectors),
+    engagementMetrics: getEngagementMetrics(tweetElement, tweetSelectors),
   };
 };
 
@@ -233,7 +348,13 @@ const sendTweetToServiceWorker = (payload: TweetScrapePayload): void => {
   });
 };
 
-const injectInterventionUI = (tweetElement: HTMLElement, level: string, reason: string): void => {
+const injectInterventionUI = (
+  tweetElement: HTMLElement,
+  level: string,
+  reason: string,
+  tweetId: string,
+  tweetVector?: { social: number; economic: number; populist: number }
+): void => {
   if (tweetElement.dataset.ragebaiterUi === "true") {
     return;
   }
@@ -258,12 +379,64 @@ const injectInterventionUI = (tweetElement: HTMLElement, level: string, reason: 
       level={safeLevel}
       reason={reason}
       onDismiss={() => {
+        if (tweetVector) {
+          void sendFeedbackSubmitted({
+            tweetId,
+            feedback: "dismissed",
+            tweetVector,
+            timestamp: new Date().toISOString(),
+          }).catch((error) => {
+            console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED dismissed", error);
+          });
+        }
         container.remove();
         tweetElement.dataset.ragebaiterUi = "dismissed";
       }}
       onProceed={() => {
+        if (tweetVector) {
+          void sendFeedbackSubmitted({
+            tweetId,
+            feedback: "acknowledged",
+            tweetVector,
+            timestamp: new Date().toISOString(),
+          }).catch((error) => {
+            console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED acknowledged", error);
+          });
+        }
         container.remove();
         tweetElement.dataset.ragebaiterUi = "acknowledged";
+      }}
+      onAgree={() => {
+        if (!tweetVector) {
+          return;
+        }
+
+        void sendFeedbackSubmitted({
+          tweetId,
+          feedback: "agreed",
+          tweetVector,
+          timestamp: new Date().toISOString(),
+        }).catch((error) => {
+          console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED agreed", error);
+        });
+
+        tweetElement.dataset.ragebaiterUi = "agreed";
+      }}
+      onDisagree={() => {
+        if (!tweetVector) {
+          return;
+        }
+
+        void sendFeedbackSubmitted({
+          tweetId,
+          feedback: "dismissed",
+          tweetVector,
+          timestamp: new Date().toISOString(),
+        }).catch((error) => {
+          console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED dismissed", error);
+        });
+
+        tweetElement.dataset.ragebaiterUi = "dismissed";
       }}
     />
   );
@@ -272,9 +445,20 @@ const injectInterventionUI = (tweetElement: HTMLElement, level: string, reason: 
 const applyInterventionLevel = (
   message: InterventionTriggerMessage | AnalyzeResultMessage
 ): MessageAck<void> => {
+  const tweetSelectors = buildTweetSelectorChain(resolveSelectorFeatureFlags());
+  const combinedSelector = getCombinedSelector(tweetSelectors);
+
+  if (!combinedSelector) {
+    return {
+      ok: false,
+      error: "No tweet selectors enabled",
+      retriable: false,
+    };
+  }
+
   const tweetElement = document
-    .querySelector<HTMLElement>(`${TWEET_SELECTOR} a[href*="/status/${message.payload.tweetId}"]`)
-    ?.closest(TWEET_SELECTOR) as HTMLElement | null;
+    .querySelector<HTMLElement>(`${combinedSelector} a[href*="/status/${message.payload.tweetId}"]`)
+    ?.closest(combinedSelector) as HTMLElement | null;
 
   if (!tweetElement) {
     return {
@@ -287,14 +471,26 @@ const applyInterventionLevel = (
   if (message.type === MESSAGE_TYPES.INTERVENTION_TRIGGER) {
     tweetElement.dataset.ragebaiterLevel = message.payload.level;
     tweetElement.dataset.ragebaiterReason = message.payload.reason;
-    injectInterventionUI(tweetElement, message.payload.level, message.payload.reason);
+    injectInterventionUI(
+      tweetElement,
+      message.payload.level,
+      message.payload.reason,
+      message.payload.tweetId,
+      message.payload.tweetVector
+    );
   }
 
   if (message.type === MESSAGE_TYPES.ANALYZE_RESULT) {
     const level = message.payload.level ?? "none";
     tweetElement.dataset.ragebaiterLevel = level;
     tweetElement.dataset.ragebaiterReason = message.payload.topic;
-    injectInterventionUI(tweetElement, level, message.payload.topic);
+    injectInterventionUI(
+      tweetElement,
+      level,
+      message.payload.topic,
+      message.payload.tweetId,
+      message.payload.tweetVector
+    );
   }
 
   return {
@@ -330,16 +526,25 @@ const isElementNode = (node: Node | EventTarget | null | undefined): node is Ele
   return !!node && "nodeType" in node && node.nodeType === Node.ELEMENT_NODE;
 };
 
-const findTweetElementsInNode = (node: Node): HTMLElement[] => {
+const findTweetElementsInNode = (node: Node, tweetSelectors: string[]): HTMLElement[] => {
   if (!isElementNode(node)) {
     return [];
   }
 
-  if (node.matches(TWEET_SELECTOR)) {
-    return [node as HTMLElement];
+  const combinedSelector = getCombinedSelector(tweetSelectors);
+
+  if (!combinedSelector) {
+    return [];
   }
 
-  return Array.from(node.querySelectorAll<HTMLElement>(TWEET_SELECTOR));
+  const matchesSelector = tweetSelectors.some((selector) => node.matches(selector));
+  const descendants = Array.from(node.querySelectorAll<HTMLElement>(combinedSelector));
+
+  if (!matchesSelector) {
+    return descendants;
+  }
+
+  return [node as HTMLElement, ...descendants];
 };
 
 export const startTwitterScraper = (): ScraperController => {
@@ -351,6 +556,26 @@ export const startTwitterScraper = (): ScraperController => {
   const observedTweetElements = new Set<HTMLElement>();
   let active = true;
   let currentUrl = window.location.href;
+  const tweetSelectors = buildTweetSelectorChain(resolveSelectorFeatureFlags());
+  const combinedTweetSelector = getCombinedSelector(tweetSelectors);
+
+  setScraperDisabledDebugFlag(false);
+
+  if (!combinedTweetSelector) {
+    emitSelectorMissTelemetry(tweetSelectors, "no-selectors-enabled");
+    setScraperDisabledDebugFlag(true);
+    return {
+      stop: () => undefined,
+    };
+  }
+
+  if (!document.body) {
+    emitSelectorMissTelemetry(tweetSelectors, "missing-document-body");
+    setScraperDisabledDebugFlag(true);
+    return {
+      stop: () => undefined,
+    };
+  }
 
   const observeTweetElement = (tweetElement: HTMLElement): void => {
     if (!active) {
@@ -374,7 +599,7 @@ export const startTwitterScraper = (): ScraperController => {
       return;
     }
 
-    const payload = extractTweetPayload(tweetElement);
+    const payload = extractTweetPayload(tweetElement, tweetSelectors);
 
     if (!payload) {
       return;
@@ -412,7 +637,7 @@ export const startTwitterScraper = (): ScraperController => {
   const mutationObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
-        const tweets = findTweetElementsInNode(node);
+        const tweets = findTweetElementsInNode(node, tweetSelectors);
 
         for (const tweetElement of tweets) {
           observeTweetElement(tweetElement);
@@ -420,7 +645,7 @@ export const startTwitterScraper = (): ScraperController => {
       }
 
       for (const node of mutation.removedNodes) {
-        const tweets = findTweetElementsInNode(node);
+        const tweets = findTweetElementsInNode(node, tweetSelectors);
 
         for (const tweetElement of tweets) {
           intersectionObserver.unobserve(tweetElement);
@@ -431,7 +656,14 @@ export const startTwitterScraper = (): ScraperController => {
   });
 
   const scanExistingTweets = (): void => {
-    const tweets = document.querySelectorAll<HTMLElement>(TWEET_SELECTOR);
+    const tweets = document.querySelectorAll<HTMLElement>(combinedTweetSelector);
+
+    if (tweets.length === 0) {
+      emitSelectorMissTelemetry(tweetSelectors, "initial-scan-no-match");
+      setScraperDisabledDebugFlag(true);
+      stop();
+      return;
+    }
 
     for (const tweetElement of tweets) {
       observeTweetElement(tweetElement);
@@ -474,7 +706,7 @@ export const startTwitterScraper = (): ScraperController => {
 
   scanExistingTweets();
 
-  const stop = (): void => {
+  function stop(): void {
     if (!active) {
       return;
     }
@@ -489,7 +721,7 @@ export const startTwitterScraper = (): ScraperController => {
     window.removeEventListener("hashchange", handleRouteChange);
     window.history.pushState = nativePushState;
     window.history.replaceState = nativeReplaceState;
-  };
+  }
 
   window.addEventListener("pagehide", stop, { once: true });
   window.addEventListener("beforeunload", stop, { once: true });
@@ -503,6 +735,8 @@ declare global {
   interface Window {
     __ragebaiterScraperController?: ScraperController;
     __ragebaiterSiteConfig?: SiteConfiguration;
+    __ragebaiterSelectorFeatureFlags?: Partial<SelectorFeatureFlags>;
+    __RAGEBAITER_SCRAPER_DISABLED__?: boolean;
   }
 }
 

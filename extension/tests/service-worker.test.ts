@@ -140,6 +140,164 @@ describe("service worker messaging layer", () => {
     );
   });
 
+  it("applies deterministic feedback drift and queues event when backend sync fails", async () => {
+    await import("../src/background/service-worker.js");
+
+    const chromeMock = (globalThis as unknown as { chrome: unknown }).chrome as ChromeMock;
+    const listener = getMessageHandler(chromeMock);
+
+    const storageState: Record<string, unknown> = {
+      userVector: {
+        social: 0,
+        economic: 0,
+        populist: 0,
+      },
+      feedbackSyncQueue: [],
+      vectorHistory: [],
+      backendUrl: "http://localhost:3001",
+      apiKey: "test-key",
+    };
+
+    chromeMock.storage.local.get.mockImplementation((async (keys: unknown) => {
+      if (typeof keys === "string") {
+        return { [keys]: storageState[keys] };
+      }
+
+      if (Array.isArray(keys)) {
+        return Object.fromEntries(keys.map((key) => [key, storageState[key]]));
+      }
+
+      return storageState;
+    }) as unknown as () => Promise<{}>);
+
+    chromeMock.storage.local.set.mockImplementation((async (payload: Record<string, unknown>) => {
+      Object.assign(storageState, payload);
+      return undefined;
+    }) as unknown as () => Promise<undefined>);
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+    const response = await sendToListener(
+      listener,
+      createMessageEnvelope(MESSAGE_TYPES.FEEDBACK_SUBMITTED, {
+        tweetId: "tweet-1",
+        feedback: "agreed",
+        tweetVector: {
+          social: 0.8,
+          economic: -0.4,
+          populist: 0.2,
+        },
+        timestamp: "2026-02-15T09:00:00.000Z",
+      }),
+      {}
+    );
+
+    expect(response).toEqual({
+      ok: true,
+      payload: {
+        updatedVector: expect.objectContaining({
+          social: expect.any(Number),
+          economic: expect.any(Number),
+          populist: expect.any(Number),
+        }),
+      },
+    });
+
+    const updatedVector = storageState.userVector as {
+      social: number;
+      economic: number;
+      populist: number;
+    };
+    expect(updatedVector.social).toBeGreaterThan(0);
+    expect(updatedVector.economic).toBeLessThan(0);
+
+    const queue = storageState.feedbackSyncQueue as Array<{ syncAttempts: number }>;
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.syncAttempts).toBe(1);
+
+    const history = storageState.vectorHistory as Array<{ feedback: string }>;
+    expect(history).toHaveLength(1);
+    expect(history[0]?.feedback).toBe("agreed");
+  });
+
+  it("retries queued feedback on next feedback event and clears queue after sync success", async () => {
+    await import("../src/background/service-worker.js");
+
+    const chromeMock = (globalThis as unknown as { chrome: unknown }).chrome as ChromeMock;
+    const listener = getMessageHandler(chromeMock);
+
+    const storageState: Record<string, unknown> = {
+      userVector: {
+        social: 0,
+        economic: 0,
+        populist: 0,
+      },
+      feedbackSyncQueue: [],
+      vectorHistory: [],
+      backendUrl: "http://localhost:3001",
+      apiKey: "test-key",
+    };
+
+    chromeMock.storage.local.get.mockImplementation((async (keys: unknown) => {
+      if (typeof keys === "string") {
+        return { [keys]: storageState[keys] };
+      }
+
+      if (Array.isArray(keys)) {
+        return Object.fromEntries(keys.map((key) => [key, storageState[key]]));
+      }
+
+      return storageState;
+    }) as unknown as () => Promise<{}>);
+
+    chromeMock.storage.local.set.mockImplementation((async (payload: Record<string, unknown>) => {
+      Object.assign(storageState, payload);
+      return undefined;
+    }) as unknown as () => Promise<undefined>);
+
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary"))
+      .mockResolvedValue({ ok: true } as Response)
+      .mockResolvedValue({ ok: true } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendToListener(
+      listener,
+      createMessageEnvelope(MESSAGE_TYPES.FEEDBACK_SUBMITTED, {
+        tweetId: "tweet-a",
+        feedback: "dismissed",
+        tweetVector: {
+          social: 0.6,
+          economic: 0.2,
+          populist: 0,
+        },
+        timestamp: "2026-02-15T10:00:00.000Z",
+      }),
+      {}
+    );
+
+    expect((storageState.feedbackSyncQueue as unknown[]).length).toBe(1);
+
+    await sendToListener(
+      listener,
+      createMessageEnvelope(MESSAGE_TYPES.FEEDBACK_SUBMITTED, {
+        tweetId: "tweet-b",
+        feedback: "agreed",
+        tweetVector: {
+          social: -0.2,
+          economic: -0.7,
+          populist: 0.4,
+        },
+        timestamp: "2026-02-15T10:01:00.000Z",
+      }),
+      {}
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(storageState.feedbackSyncQueue).toEqual([]);
+  });
+
   it("skips intervention while cooldown is active", async () => {
     await import("../src/background/service-worker.js");
 

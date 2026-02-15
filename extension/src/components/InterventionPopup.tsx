@@ -8,6 +8,8 @@ export interface InterventionPopupProps {
   reason: string;
   onDismiss: () => void;
   onProceed: () => void;
+  onAgree: () => void;
+  onDisagree: () => void;
 }
 
 export const InterventionPopup: React.FC<InterventionPopupProps> = ({
@@ -15,6 +17,8 @@ export const InterventionPopup: React.FC<InterventionPopupProps> = ({
   reason,
   onDismiss,
   onProceed,
+  onAgree,
+  onDisagree,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -87,6 +91,22 @@ export const InterventionPopup: React.FC<InterventionPopupProps> = ({
       <div className="mt-3">
         <p className="font-medium">Analysis:</p>
         <p className="text-sm italic mb-2">{reason}</p>
+        <div className="flex items-center gap-2 mt-2 mb-2">
+          <button
+            onClick={onAgree}
+            className="text-xs bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-1 rounded hover:bg-emerald-200 transition-colors"
+            data-testid="feedback-agree-button"
+          >
+            Agree
+          </button>
+          <button
+            onClick={onDisagree}
+            className="text-xs bg-rose-100 border border-rose-300 text-rose-800 px-3 py-1 rounded hover:bg-rose-200 transition-colors"
+            data-testid="feedback-dismiss-button"
+          >
+            Disagree
+          </button>
+        </div>
 
         {isExpanded ? (
           <div className="mt-2 animate-fade-in">

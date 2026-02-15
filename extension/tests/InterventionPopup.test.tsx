@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { render, fireEvent, type RenderResult } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom";
 import { InterventionPopup, type InterventionLevel } from "../src/components/InterventionPopup";
 
@@ -10,57 +10,99 @@ describe("InterventionPopup", () => {
     reason: "Test reason",
     onDismiss: vi.fn(),
     onProceed: vi.fn(),
+    onAgree: vi.fn(),
+    onDisagree: vi.fn(),
+  };
+
+  let container: HTMLDivElement | null = null;
+  let renderResult: any = null;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    if (renderResult) {
+      renderResult.unmount();
+    }
+    if (container) {
+      document.body.removeChild(container);
+      container = null;
+    }
+    renderResult = null;
+  });
+
+  const renderComponent = (props = defaultProps) => {
+    if (!container) throw new Error("Container not initialized");
+    const result = render(<InterventionPopup {...props} />, { container });
+    renderResult = result;
+    return result;
   };
 
   it("renders with correct level styling", () => {
-    const { rerender } = render(<InterventionPopup {...defaultProps} level="high" />);
-    const popup = screen.getByTestId("intervention-popup");
+    const { getByTestId, getByText, rerender } = renderComponent({
+      ...defaultProps,
+      level: "high",
+    });
+    const popup = getByTestId("intervention-popup");
     expect(popup.className).toContain("border-red-500");
-    expect(screen.getByText("🛑")).toBeInTheDocument();
+    expect(getByText("🛑")).toBeInTheDocument();
 
     rerender(<InterventionPopup {...defaultProps} level="medium" />);
     expect(popup.className).toContain("border-orange-500");
-    expect(screen.getByText("⚠️")).toBeInTheDocument();
+    expect(getByText("⚠️")).toBeInTheDocument();
 
     rerender(<InterventionPopup {...defaultProps} level="low" />);
     expect(popup.className).toContain("border-yellow-500");
-    expect(screen.getByText("✋")).toBeInTheDocument();
+    expect(getByText("✋")).toBeInTheDocument();
   });
 
   it("displays the reason", () => {
-    render(<InterventionPopup {...defaultProps} reason="This is a fallacy" />);
-    expect(screen.getByText("This is a fallacy")).toBeInTheDocument();
+    const { getByText } = renderComponent({ ...defaultProps, reason: "This is a fallacy" });
+    expect(getByText("This is a fallacy")).toBeInTheDocument();
   });
 
   it("handles dismissal", () => {
-    render(<InterventionPopup {...defaultProps} />);
-    const dismissButton = screen.getByLabelText("Dismiss intervention");
+    const { getByLabelText } = renderComponent();
+    const dismissButton = getByLabelText("Dismiss intervention");
     fireEvent.click(dismissButton);
     expect(defaultProps.onDismiss).toHaveBeenCalled();
   });
 
   it("expands to show socratic question and handles proceed", () => {
-    render(<InterventionPopup {...defaultProps} />);
+    const { getByText } = renderComponent();
 
-    const expandButton = screen.getByText("Read More & Reflect");
+    const expandButton = getByText("Read More & Reflect");
     expect(expandButton).toBeInTheDocument();
 
     fireEvent.click(expandButton);
 
-    expect(screen.getByText(/How might this content be framing/i)).toBeInTheDocument();
+    expect(getByText(/How might this content be framing/i)).toBeInTheDocument();
 
-    const proceedButton = screen.getByText("View Content Anyway");
+    const proceedButton = getByText("View Content Anyway");
     fireEvent.click(proceedButton);
     expect(defaultProps.onProceed).toHaveBeenCalled();
   });
 
-  it("collapses when show less is clicked", () => {
-    render(<InterventionPopup {...defaultProps} />);
-    fireEvent.click(screen.getByText("Read More & Reflect"));
+  it("fires agree and disagree feedback handlers", () => {
+    const { getByTestId } = renderComponent();
 
-    const collapseButton = screen.getByText("Show Less");
+    fireEvent.click(getByTestId("feedback-agree-button"));
+    fireEvent.click(getByTestId("feedback-dismiss-button"));
+
+    expect(defaultProps.onAgree).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onDisagree).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapses when show less is clicked", () => {
+    const { getByText } = renderComponent();
+    fireEvent.click(getByText("Read More & Reflect"));
+
+    const collapseButton = getByText("Show Less");
     fireEvent.click(collapseButton);
 
-    expect(screen.getByText("Read More & Reflect")).toBeInTheDocument();
+    expect(getByText("Read More & Reflect")).toBeInTheDocument();
   });
 });

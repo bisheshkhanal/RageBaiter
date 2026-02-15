@@ -45,11 +45,14 @@ export type InterventionTriggerPayload = {
   tweetId: string;
   level: InterventionLevel;
   reason: string;
+  tweetVector?: PoliticalVectorPayload;
 };
 
 export type FeedbackSubmittedPayload = {
   tweetId: string;
   feedback: "acknowledged" | "agreed" | "dismissed";
+  tweetVector: PoliticalVectorPayload;
+  timestamp: string;
 };
 
 export type SettingsUpdatedPayload = {
