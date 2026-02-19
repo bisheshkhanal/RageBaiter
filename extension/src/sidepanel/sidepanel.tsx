@@ -18,10 +18,11 @@ import { QuizResults } from "./QuizResults.js";
 import { LLMConfig } from "./LLMConfig.js";
 import { DebugPanel } from "./DebugPanel.js";
 import { SiteToggle } from "../components/Settings/SiteToggle.js";
+import { ErrorBoundary } from "../components/ErrorBoundary.js";
 import "./sidepanel.css";
 
 type Tab = "quiz" | "debug" | "settings";
-type QuizState = "intro" | "quiz" | "manual" | "results";
+type QuizState = "onboarding" | "intro" | "quiz" | "manual" | "results";
 
 type UserVector = {
   social: number;
@@ -52,23 +53,26 @@ export function SidePanel(): React.ReactElement {
   const [privacyError, setPrivacyError] = useState<string | null>(null);
   const [isPrivacyActionRunning, setIsPrivacyActionRunning] = useState(false);
   const [vectorHistory, setVectorHistory] = useState<FeedbackHistoryItem[]>([]);
+  const [isFromOnboarding, setIsFromOnboarding] = useState(false);
 
   useEffect(() => {
     const loadStoredData = async () => {
-      const [vectorResult, quizResult] = await Promise.all([
-        chrome.storage.local.get(["userVector", "vectorHistory"]),
+      const [storageResult, quizResult] = await Promise.all([
+        chrome.storage.local.get(["userVector", "vectorHistory", "isFirstInstall"]),
         getStoredQuizResult(),
       ]);
 
-      if (vectorResult.userVector) {
-        setUserVector(vectorResult.userVector);
+      if (storageResult.userVector) {
+        setUserVector(storageResult.userVector);
       }
 
-      if (Array.isArray(vectorResult.vectorHistory)) {
-        setVectorHistory(vectorResult.vectorHistory);
+      if (Array.isArray(storageResult.vectorHistory)) {
+        setVectorHistory(storageResult.vectorHistory);
       }
 
-      if (quizResult) {
+      if (storageResult.isFirstInstall === true) {
+        setQuizState("onboarding");
+      } else if (quizResult) {
         setUserVector({
           social: quizResult.vector.social,
           economic: quizResult.vector.economic,
@@ -115,6 +119,19 @@ export function SidePanel(): React.ReactElement {
     setQuizState("quiz");
     setCurrentQuestionIndex(0);
     setAnswers(new Map());
+  }, []);
+
+  const handleStartQuizFromOnboarding = useCallback(async () => {
+    await chrome.storage.local.remove("isFirstInstall");
+    setIsFromOnboarding(true);
+    setQuizState("quiz");
+    setCurrentQuestionIndex(0);
+    setAnswers(new Map());
+  }, []);
+
+  const handleSkipOnboarding = useCallback(async () => {
+    await chrome.storage.local.remove("isFirstInstall");
+    setQuizState("intro");
   }, []);
 
   const handleAnswer = useCallback((questionId: number, value: LikertValue) => {
@@ -359,9 +376,7 @@ export function SidePanel(): React.ReactElement {
     setPrivacyError(null);
     setPrivacyStatus(null);
 
-    const confirmed = window.confirm(
-      "Delete all backend data for this account? This cannot be undone."
-    );
+    const confirmed = window.confirm("Delete all your data? This cannot be undone.");
     if (!confirmed) {
       return;
     }
@@ -375,28 +390,22 @@ export function SidePanel(): React.ReactElement {
       }
 
       const response = await fetch(`${backendUrl}/api/user/delete`, {
-        method: "POST",
+        method: "DELETE",
         headers,
       });
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 204) {
         throw new Error(await readErrorMessage(response));
       }
 
-      const body = (await response.json()) as { deleted?: unknown };
-      const deleted = body.deleted === true;
+      await chrome.storage.local.clear();
+      setUserVector(null);
+      setVectorHistory([]);
+      setPrivacyStatus("All data deleted successfully. Reloading...");
 
-      if (deleted) {
-        await clearQuizResult();
-        await chrome.storage.local.remove("userVector");
-        setUserVector(null);
-      }
-
-      setPrivacyStatus(
-        deleted
-          ? "All backend data deleted for this account."
-          : "No backend data was found for this account."
-      );
+      setTimeout(() => {
+        globalThis.location.reload();
+      }, 1000);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete data";
       setPrivacyError(message);
@@ -411,6 +420,65 @@ export function SidePanel(): React.ReactElement {
     }
 
     switch (quizState) {
+      case "onboarding":
+        return (
+          <div className="tab-content">
+            <div className="onboarding-screen">
+              <div className="onboarding-icon">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+              </div>
+              <h2 className="onboarding-title">Welcome to RageBaiter</h2>
+              <p className="onboarding-description">
+                RageBaiter monitors your Twitter feed and nudges you when it detects echo chamber
+                content. To personalize your experience, take a 2-minute political compass quiz.
+              </p>
+              <div className="onboarding-features">
+                <div className="onboarding-feature">
+                  <span className="onboarding-feature-icon">🎯</span>
+                  <span>Personalized interventions</span>
+                </div>
+                <div className="onboarding-feature">
+                  <span className="onboarding-feature-icon">🧠</span>
+                  <span>Bias detection</span>
+                </div>
+                <div className="onboarding-feature">
+                  <span className="onboarding-feature-icon">💬</span>
+                  <span>Socratic prompts</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="action-button primary onboarding-cta"
+                onClick={handleStartQuizFromOnboarding}
+                data-testid="onboarding-start-quiz-button"
+              >
+                Take the Quiz →
+              </button>
+              <button
+                type="button"
+                className="quiz-skip-link"
+                onClick={handleSkipOnboarding}
+                data-testid="onboarding-skip-button"
+              >
+                Skip for now
+              </button>
+            </div>
+          </div>
+        );
+
       case "intro":
         return (
           <div className="tab-content">
@@ -463,6 +531,23 @@ export function SidePanel(): React.ReactElement {
       case "results":
         return (
           <div className="tab-content">
+            {isFromOnboarding && (
+              <div className="onboarding-success-banner">
+                <p>
+                  <strong>You&apos;re all set!</strong> RageBaiter will now analyze tweets as you
+                  scroll. Head to{" "}
+                  <a
+                    href="https://twitter.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="onboarding-link"
+                  >
+                    Twitter
+                  </a>{" "}
+                  to see your first intervention.
+                </p>
+              </div>
+            )}
             {userVector && (
               <>
                 <QuizResults
@@ -574,11 +659,7 @@ export function SidePanel(): React.ReactElement {
 
             <SiteToggle />
 
-            <LLMConfig
-              onConfigChange={(config) => {
-                console.log("[RageBaiter] LLM config updated:", config.provider);
-              }}
-            />
+            <LLMConfig />
 
             <div className="settings-section">
               <h3>Privacy</h3>
@@ -616,5 +697,9 @@ export function SidePanel(): React.ReactElement {
 
 const root = document.getElementById("root");
 if (root) {
-  ReactDOM.createRoot(root).render(<SidePanel />);
+  ReactDOM.createRoot(root).render(
+    <ErrorBoundary>
+      <SidePanel />
+    </ErrorBoundary>
+  );
 }

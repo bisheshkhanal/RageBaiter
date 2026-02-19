@@ -1,9 +1,9 @@
-import { useState, useRef, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { Line, Html, CatmullRomLine } from '@react-three/drei';
-import * as THREE from 'three';
-import type { HistoryEntry } from '../types';
-import { rageColor, vectorToPosition } from '../types';
+import { useState, useRef, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import { Line, Html, CatmullRomLine } from "@react-three/drei";
+import * as THREE from "three";
+import type { HistoryEntry } from "../types";
+import { rageColor, vectorToPosition } from "../types";
 
 interface DriftPathProps {
   history: HistoryEntry[];
@@ -32,11 +32,11 @@ function WaypointMarker({ entry, index }: { entry: HistoryEntry; index: number }
         onPointerOver={(e) => {
           e.stopPropagation();
           setHovered(true);
-          document.body.style.cursor = 'pointer';
+          document.body.style.cursor = "pointer";
         }}
         onPointerOut={() => {
           setHovered(false);
-          document.body.style.cursor = 'default';
+          document.body.style.cursor = "default";
         }}
         scale={hovered ? 1.6 : 1}
       >
@@ -55,15 +55,15 @@ function WaypointMarker({ entry, index }: { entry: HistoryEntry; index: number }
           position={[pos[0], pos[1] + size + 0.1, pos[2]]}
           center
           distanceFactor={10}
-          style={{ pointerEvents: 'none', transition: 'opacity 0.2s', opacity: hovered ? 1 : 0 }}
+          style={{ pointerEvents: "none", transition: "opacity 0.2s", opacity: hovered ? 1 : 0 }}
         >
           <div
             className="glass px-3 py-2 rounded-lg border border-white/10 shadow-xl backdrop-blur-xl"
             style={{
-              background: 'rgba(10, 10, 20, 0.85)',
-              minWidth: '220px',
-              maxWidth: '280px',
-              transform: 'translateY(-50%)',
+              background: "rgba(10, 10, 20, 0.85)",
+              minWidth: "220px",
+              maxWidth: "280px",
+              transform: "translateY(-50%)",
             }}
           >
             <div className="flex justify-between items-start mb-1.5 border-b border-white/10 pb-1.5">
@@ -74,7 +74,7 @@ function WaypointMarker({ entry, index }: { entry: HistoryEntry; index: number }
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded"
                 style={{
                   background: color,
-                  color: entry.rage_score > 60 ? '#000' : '#fff',
+                  color: entry.rage_score > 60 ? "#000" : "#fff",
                 }}
               >
                 RAGE: {entry.rage_score}
@@ -82,7 +82,11 @@ function WaypointMarker({ entry, index }: { entry: HistoryEntry; index: number }
             </div>
 
             <div className="text-xs text-white/90 italic leading-snug mb-2 font-serif">
-              "{entry.tweet_text.length > 120 ? entry.tweet_text.slice(0, 120) + '…' : entry.tweet_text}"
+              "
+              {entry.tweet_text.length > 120
+                ? entry.tweet_text.slice(0, 120) + "…"
+                : entry.tweet_text}
+              "
             </div>
 
             {(entry.topic || (entry.fallacies && entry.fallacies.length > 0)) && (
@@ -93,7 +97,10 @@ function WaypointMarker({ entry, index }: { entry: HistoryEntry; index: number }
                   </span>
                 )}
                 {entry.fallacies?.map((f) => (
-                  <span key={f} className="text-[9px] px-1.5 py-0.5 bg-red-500/10 text-red-300 rounded border border-red-500/20">
+                  <span
+                    key={f}
+                    className="text-[9px] px-1.5 py-0.5 bg-red-500/10 text-red-300 rounded border border-red-500/20"
+                  >
                     {f}
                   </span>
                 ))}
@@ -131,7 +138,6 @@ export function DriftPath({ history }: DriftPathProps) {
         opacity={0.8}
         curveType="catmullrom"
         tension={0.5}
-        steps={20} // Smoothness
       />
 
       {/* Waypoint markers */}

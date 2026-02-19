@@ -36,6 +36,7 @@ export type UserExportPayload = {
   profile: UserProfile;
   feedback: UserFeedback[];
   quizResponses: QuizResponse[];
+  exportedAt: string;
 };
 
 export type UserDeleteResult = {
@@ -114,7 +115,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
 
   public static fromEnv(fetcher?: typeof fetch): SupabaseUserPrivacyRepository | null {
     const supabaseUrl = readEnv("SUPABASE_URL");
-    const supabaseKey = readEnv("SUPABASE_ANON_KEY") ?? readEnv("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseKey = readEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseKey) {
       return null;
@@ -125,26 +126,27 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
 
   public async exportUserData(
     authId: string,
-    accessToken: string
+    _accessToken: string
   ): Promise<UserExportPayload | null> {
-    const profile = await this.getUserProfile(authId, accessToken);
+    const profile = await this.getUserProfile(authId);
     if (!profile) {
       return null;
     }
 
     const [feedback, quizResponses] = await Promise.all([
-      this.getFeedback(profile.id, accessToken),
-      this.getQuizResponses(profile.id, accessToken),
+      this.getFeedback(profile.id),
+      this.getQuizResponses(profile.id),
     ]);
 
     return {
       profile,
       feedback,
       quizResponses,
+      exportedAt: new Date().toISOString(),
     };
   }
 
-  public async deleteUserData(authId: string, accessToken: string): Promise<UserDeleteResult> {
+  public async deleteUserData(authId: string, _accessToken: string): Promise<UserDeleteResult> {
     const url = new URL(`${this.supabaseUrl}/rest/v1/users`);
     url.searchParams.set("auth_id", `eq.${authId}`);
     url.searchParams.set("select", "id");
@@ -152,7 +154,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
     const response = await this.fetcher(url, {
       method: "DELETE",
       headers: {
-        ...this.getHeaders(accessToken),
+        ...this.getHeaders(),
         Prefer: "return=representation",
       },
     });
@@ -167,7 +169,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
     };
   }
 
-  private async getUserProfile(authId: string, accessToken: string): Promise<UserProfile | null> {
+  private async getUserProfile(authId: string): Promise<UserProfile | null> {
     const url = new URL(`${this.supabaseUrl}/rest/v1/users`);
     url.searchParams.set("auth_id", `eq.${authId}`);
     url.searchParams.set(
@@ -178,7 +180,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
 
     const response = await this.fetcher(url, {
       method: "GET",
-      headers: this.getHeaders(accessToken),
+      headers: this.getHeaders(),
     });
 
     if (!response.ok) {
@@ -189,7 +191,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
     return rows[0] ?? null;
   }
 
-  private async getFeedback(userId: number, accessToken: string): Promise<UserFeedback[]> {
+  private async getFeedback(userId: number): Promise<UserFeedback[]> {
     const url = new URL(`${this.supabaseUrl}/rest/v1/user_feedback`);
     url.searchParams.set("user_id", `eq.${userId}`);
     url.searchParams.set("select", "id,user_id,tweet_id,feedback_type,created_at");
@@ -197,7 +199,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
 
     const response = await this.fetcher(url, {
       method: "GET",
-      headers: this.getHeaders(accessToken),
+      headers: this.getHeaders(),
     });
 
     if (!response.ok) {
@@ -207,7 +209,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
     return (await response.json()) as UserFeedback[];
   }
 
-  private async getQuizResponses(userId: number, accessToken: string): Promise<QuizResponse[]> {
+  private async getQuizResponses(userId: number): Promise<QuizResponse[]> {
     const url = new URL(`${this.supabaseUrl}/rest/v1/quiz_responses`);
     url.searchParams.set("user_id", `eq.${userId}`);
     url.searchParams.set("select", "id,user_id,answers,resulting_vector,created_at");
@@ -215,7 +217,7 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
 
     const response = await this.fetcher(url, {
       method: "GET",
-      headers: this.getHeaders(accessToken),
+      headers: this.getHeaders(),
     });
 
     if (!response.ok) {
@@ -225,10 +227,10 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
     return (await response.json()) as QuizResponse[];
   }
 
-  private getHeaders(accessToken: string): Record<string, string> {
+  private getHeaders(): Record<string, string> {
     return {
       apikey: this.supabaseKey,
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${this.supabaseKey}`,
     };
   }
 }
@@ -283,7 +285,7 @@ export const createUserRoutes = (options: UserRoutesOptions = {}): Hono => {
     return c.json(data, 200);
   });
 
-  userRoutes.post("/delete", async (c) => {
+  userRoutes.delete("/delete", async (c) => {
     const authContext = readAuthContext(
       c.req.header("Authorization") ?? c.req.header("authorization")
     );
@@ -296,17 +298,8 @@ export const createUserRoutes = (options: UserRoutesOptions = {}): Hono => {
       return c.json(backendUnavailableResponse, 503);
     }
 
-    const result = await privacyRepository.deleteUserData(
-      authContext.authId,
-      authContext.accessToken
-    );
-    return c.json(
-      {
-        success: true,
-        deleted: result.deleted,
-      },
-      200
-    );
+    await privacyRepository.deleteUserData(authContext.authId, authContext.accessToken);
+    return c.body(null, 204);
   });
 
   return userRoutes;

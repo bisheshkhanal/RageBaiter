@@ -4,6 +4,7 @@ import {
   type InterventionDecision,
 } from "./decision-engine.js";
 import type { PoliticalVectorPayload, AnalyzeResultPayload } from "../messaging/protocol.js";
+import { logger } from "../lib/logger.js";
 
 export type PipelineConfig = {
   maxConcurrency: number;
@@ -201,7 +202,7 @@ export class PipelineOrchestrator {
       return await this._executePipeline(input);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[RageBaiter][Pipeline] Unhandled error for tweet ${input.tweetId}:`, message);
+      logger.warn(`Unhandled error for tweet ${input.tweetId}:`, message);
       return { tweetId: input.tweetId, stage: "keyword_filter", error: message };
     } finally {
       this._inFlight.delete(input.tweetId);
@@ -318,7 +319,7 @@ export class PipelineOrchestrator {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[RageBaiter][Pipeline] Injection failed for ${input.tweetId}:`, message);
+      logger.warn(`Injection failed for ${input.tweetId}:`, message);
       return {
         tweetId: input.tweetId,
         stage: "decision",
@@ -359,7 +360,7 @@ export const createBackendFetcher = (
       });
 
       if (!response.ok) {
-        console.warn(`[RageBaiter][Pipeline] Backend ${response.status} for ${tweetId}`);
+        logger.warn(`Backend ${response.status} for ${tweetId}`);
         return null;
       }
 
@@ -383,7 +384,7 @@ export const createBackendFetcher = (
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[RageBaiter][Pipeline] Fetch failed for ${tweetId}:`, message);
+      logger.warn(`Fetch failed for ${tweetId}:`, message);
       return null;
     } finally {
       globalThis.clearTimeout(timer);

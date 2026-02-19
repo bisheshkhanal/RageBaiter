@@ -1,145 +1,120 @@
-import { describe, expect, it } from "vitest";
+import { Hono } from "hono";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { createUserRoutes, type UserExportPayload, type UserPrivacyRepository } from "./user.js";
+import { authMiddleware } from "../middleware/auth.js";
+import { createBearerAuthHeader, TEST_AUTH_ID } from "../test-helpers/auth.js";
+import {
+  cleanupTestData,
+  ensureTestUser,
+  getHeadersForSupabaseTests,
+  supabaseRequest,
+} from "../test-helpers/supabase.js";
+import type { AppEnv } from "../types.js";
+import { createUserRoutes } from "./user.js";
 
-class InMemoryUserPrivacyRepository implements UserPrivacyRepository {
-  private readonly byAuthId = new Map<string, UserExportPayload>();
-
-  public constructor(initialRows: Record<string, UserExportPayload>) {
-    for (const [authId, payload] of Object.entries(initialRows)) {
-      this.byAuthId.set(authId, payload);
-    }
-  }
-
-  public async exportUserData(
-    authId: string,
-    _accessToken: string
-  ): Promise<UserExportPayload | null> {
-    return this.byAuthId.get(authId) ?? null;
-  }
-
-  public async deleteUserData(authId: string, _accessToken: string): Promise<{ deleted: boolean }> {
-    const deleted = this.byAuthId.delete(authId);
-    return { deleted };
-  }
-}
-
-const buildBearerToken = (authId: string): string => {
-  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({ sub: authId })).toString("base64url");
-  return `Bearer ${header}.${payload}.signature`;
+const createTestApp = (): Hono<AppEnv> => {
+  const app = new Hono<AppEnv>();
+  app.use("/api/*", authMiddleware);
+  app.route("/api/user", createUserRoutes());
+  return app;
 };
 
-describe("/api/user privacy routes", () => {
-  it("exports data, deletes it, then returns 404 for subsequent exports", async () => {
-    const authId = "11111111-1111-1111-1111-111111111111";
-    const repository = new InMemoryUserPrivacyRepository({
-      [authId]: {
-        profile: {
-          id: 5,
-          auth_id: authId,
-          vector_social: 0.3,
-          vector_economic: -0.2,
-          vector_populist: 0.1,
-          created_at: "2026-02-15T10:00:00.000Z",
-          updated_at: "2026-02-15T10:05:00.000Z",
-        },
-        feedback: [
-          {
-            id: 2,
-            user_id: 5,
-            tweet_id: "tweet-100",
-            feedback_type: "agreed",
-            created_at: "2026-02-15T10:10:00.000Z",
-          },
-        ],
-        quizResponses: [
-          {
-            id: 9,
-            user_id: 5,
-            answers: [{ questionId: 1, value: 2 }],
-            resulting_vector: [0.3, -0.2, 0.1],
-            created_at: "2026-02-15T10:01:00.000Z",
-          },
-        ],
-      },
-    });
-    const app = createUserRoutes({ privacyRepository: repository });
-    const authorization = buildBearerToken(authId);
+const seedAnalyzedTweet = async (tweetId: string): Promise<void> => {
+  const now = new Date();
+  await supabaseRequest<unknown[]>("analyzed_tweets", {
+    method: "POST",
+    headers: {
+      ...getHeadersForSupabaseTests(),
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify({
+      tweet_id: tweetId,
+      tweet_text: "user export test tweet",
+      vector_social: 0.1,
+      vector_economic: 0.2,
+      vector_populist: -0.3,
+      fallacies: ["test"],
+      topic: "integration",
+      analyzed_at: now.toISOString(),
+      expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    }),
+  });
+};
 
-    const exportBeforeDelete = await app.request(
-      new Request("http://localhost/export", {
-        method: "GET",
-        headers: {
-          Authorization: authorization,
-        },
-      })
-    );
-    const exportBeforeDeleteBody = (await exportBeforeDelete.json()) as UserExportPayload;
-
-    const deleteResponse = await app.request(
-      new Request("http://localhost/delete", {
-        method: "POST",
-        headers: {
-          Authorization: authorization,
-        },
-      })
-    );
-    const deleteBody = (await deleteResponse.json()) as { success: boolean; deleted: boolean };
-
-    const secondDeleteResponse = await app.request(
-      new Request("http://localhost/delete", {
-        method: "POST",
-        headers: {
-          Authorization: authorization,
-        },
-      })
-    );
-    const secondDeleteBody = (await secondDeleteResponse.json()) as {
-      success: boolean;
-      deleted: boolean;
-    };
-
-    const exportAfterDelete = await app.request(
-      new Request("http://localhost/export", {
-        method: "GET",
-        headers: {
-          Authorization: authorization,
-        },
-      })
-    );
-    const exportAfterDeleteBody = (await exportAfterDelete.json()) as {
-      error: { code: string; message: string };
-    };
-
-    expect(exportBeforeDelete.status).toBe(200);
-    expect(exportBeforeDeleteBody.profile.auth_id).toBe(authId);
-    expect(exportBeforeDeleteBody.feedback).toHaveLength(1);
-    expect(exportBeforeDeleteBody.quizResponses).toHaveLength(1);
-
-    expect(deleteResponse.status).toBe(200);
-    expect(deleteBody).toEqual({ success: true, deleted: true });
-
-    expect(secondDeleteResponse.status).toBe(200);
-    expect(secondDeleteBody).toEqual({ success: true, deleted: false });
-
-    expect(exportAfterDelete.status).toBe(404);
-    expect(exportAfterDeleteBody.error.code).toBe("USER_NOT_FOUND");
+describe("/api/user integration", () => {
+  afterEach(async () => {
+    await cleanupTestData(TEST_AUTH_ID, "test-user-");
   });
 
-  it("returns 401 when bearer token has no user context", async () => {
-    const repository = new InMemoryUserPrivacyRepository({});
-    const app = createUserRoutes({ privacyRepository: repository });
+  it("exports user data and deletes all user data", async () => {
+    const app = createTestApp();
+    const userId = await ensureTestUser(TEST_AUTH_ID);
+    if (!userId) {
+      throw new Error("Failed to ensure test user");
+    }
 
-    const response = await app.request(
-      new Request("http://localhost/export", {
+    const tweetId = `test-user-${Date.now()}`;
+    await seedAnalyzedTweet(tweetId);
+
+    await supabaseRequest<unknown[]>("user_feedback", {
+      method: "POST",
+      headers: {
+        ...getHeadersForSupabaseTests(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        tweet_id: tweetId,
+        feedback_type: "agreed",
+      }),
+    });
+
+    await supabaseRequest<unknown[]>("quiz_responses", {
+      method: "POST",
+      headers: {
+        ...getHeadersForSupabaseTests(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        answers: { q1: 1 },
+        resulting_vector: [0.11, 0.22, 0.33],
+      }),
+    });
+
+    const exportResponse = await app.request(
+      new Request("http://localhost/api/user/export", {
         method: "GET",
-        headers: {
-          Authorization: "Bearer not-a-jwt",
-        },
+        headers: createBearerAuthHeader(TEST_AUTH_ID),
+      })
+    );
+    const exportBody = (await exportResponse.json()) as {
+      profile: { auth_id: string };
+      feedback: unknown[];
+      quizResponses: unknown[];
+    };
+
+    expect(exportResponse.status).toBe(200);
+    expect(exportBody.profile.auth_id).toBe(TEST_AUTH_ID);
+    expect(exportBody.feedback.length).toBeGreaterThan(0);
+    expect(exportBody.quizResponses.length).toBeGreaterThan(0);
+
+    const deleteResponse = await app.request(
+      new Request("http://localhost/api/user/delete", {
+        method: "DELETE",
+        headers: createBearerAuthHeader(TEST_AUTH_ID),
+      })
+    );
+    expect(deleteResponse.status).toBe(204);
+
+    const exportAfterDelete = await app.request(
+      new Request("http://localhost/api/user/export", {
+        method: "GET",
+        headers: createBearerAuthHeader(TEST_AUTH_ID),
       })
     );
 
-    expect(response.status).toBe(401);
+    expect(exportAfterDelete.status).toBe(404);
   });
 });

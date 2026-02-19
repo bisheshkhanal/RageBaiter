@@ -1,0 +1,331 @@
+/* RageBaiter Intervention Popup Styles */
+/* Isolated via Shadow DOM to prevent Twitter CSS leakage */
+
+:host {
+  all: initial;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* CSS Custom Properties for theming */
+:root {
+  --rb-accent-color: #f59e0b;
+  --rb-accent-color-40: #f59e0b40;
+  --rb-accent-color-30: #f59e0b30;
+  --rb-accent-color-20: #f59e0b20;
+  --rb-accent-color-15: #f59e0b15;
+  --rb-accent-color-60: #f59e0b60;
+
+  --rb-bg-primary: #1a1a2e;
+  --rb-bg-secondary: #0f172a;
+  --rb-text-primary: #e2e8f0;
+  --rb-text-secondary: #94a3b8;
+  --rb-text-tertiary: #64748b;
+  --rb-text-muted: #475569;
+  --rb-text-claim: #cbd5e1;
+  --rb-border-primary: #334155;
+
+  --rb-green-primary: #065f46;
+  --rb-green-secondary: #064e3b;
+  --rb-green-text: #6ee7b7;
+
+  --rb-red-primary: #991b1b;
+  --rb-red-secondary: #7f1d1d;
+  --rb-red-text: #fca5a5;
+
+  --rb-blue-text: #60a5fa;
+  --rb-emerald-text: #34d399;
+  --rb-violet-text: #a78bfa;
+}
+
+/* Level-specific accent color overrides */
+:host([data-level="high"]) {
+  --rb-accent-color: #ef4444;
+  --rb-accent-color-40: #ef444440;
+  --rb-accent-color-30: #ef444430;
+  --rb-accent-color-20: #ef444420;
+  --rb-accent-color-15: #ef444415;
+  --rb-accent-color-60: #ef444460;
+}
+
+:host([data-level="medium"]) {
+  --rb-accent-color: #f59e0b;
+  --rb-accent-color-40: #f59e0b40;
+  --rb-accent-color-30: #f59e0b30;
+  --rb-accent-color-20: #f59e0b20;
+  --rb-accent-color-15: #f59e0b15;
+  --rb-accent-color-60: #f59e0b60;
+}
+
+:host([data-level="low"]) {
+  --rb-accent-color: #f59e0b;
+  --rb-accent-color-40: #f59e0b40;
+  --rb-accent-color-30: #f59e0b30;
+  --rb-accent-color-20: #f59e0b20;
+  --rb-accent-color-15: #f59e0b15;
+  --rb-accent-color-60: #f59e0b60;
+}
+
+/* Dark mode (default) - already dark, no changes needed */
+/* Light mode support via Twitter's data-color-mode attribute or system preference */
+@media (prefers-color-scheme: light) {
+  :host(:not([data-color-mode="dark"])) {
+    --rb-bg-primary: #ffffff;
+    --rb-bg-secondary: #f8fafc;
+    --rb-text-primary: #1e293b;
+    --rb-text-secondary: #475569;
+    --rb-text-tertiary: #64748b;
+    --rb-text-muted: #94a3b8;
+    --rb-text-claim: #334155;
+    --rb-border-primary: #e2e8f0;
+  }
+}
+
+/* Main popup container */
+.rb-popup {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--rb-bg-primary);
+  border-radius: 12px;
+  border: 1px solid var(--rb-accent-color-40);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.5),
+    0 0 0 1px var(--rb-accent-color-20);
+  color: var(--rb-text-primary);
+  margin-bottom: 12px;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Header section */
+.rb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--rb-accent-color-30);
+  background: linear-gradient(135deg, var(--rb-accent-color-15), transparent);
+}
+
+.rb-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rb-warning-icon {
+  font-size: 20px;
+}
+
+.rb-header-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.rb-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 4px;
+}
+
+.rb-header-label {
+  color: var(--rb-accent-color);
+  letter-spacing: 1.2px;
+  margin-bottom: 2px;
+}
+
+.rb-header-subtitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rb-text-secondary);
+}
+
+.rb-dismiss-btn {
+  background: none;
+  border: none;
+  color: var(--rb-text-tertiary);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
+  line-height: 1;
+}
+
+.rb-dismiss-btn:hover {
+  color: var(--rb-text-secondary);
+}
+
+/* Body section */
+.rb-body {
+  padding: 14px 16px;
+}
+
+/* Claim section */
+.rb-claim-section {
+  margin-bottom: 14px;
+}
+
+.rb-claim-label {
+  color: var(--rb-accent-color);
+}
+
+.rb-claim-text {
+  font-size: 13px;
+  color: var(--rb-text-claim);
+  line-height: 1.55;
+  font-style: italic;
+  border-left: 3px solid var(--rb-accent-color-60);
+  padding-left: 10px;
+}
+
+/* Mechanism section */
+.rb-mechanism-section {
+  margin-bottom: 14px;
+}
+
+.rb-mechanism-label {
+  color: var(--rb-blue-text);
+}
+
+.rb-body-text {
+  font-size: 13px;
+  color: var(--rb-text-secondary);
+  line-height: 1.55;
+}
+
+/* Data check section */
+.rb-datacheck-section {
+  margin-bottom: 14px;
+}
+
+.rb-datacheck-label {
+  color: var(--rb-emerald-text);
+}
+
+/* Socratic challenge section */
+.rb-socratic-section {
+  margin-bottom: 16px;
+  background: var(--rb-bg-secondary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--rb-border-primary);
+}
+
+.rb-socratic-label {
+  color: var(--rb-violet-text);
+}
+
+.rb-socratic-text {
+  font-size: 13px;
+  line-height: 1.55;
+  font-style: italic;
+  color: var(--rb-text-primary);
+}
+
+/* Impact section */
+.rb-impact-section {
+  border-top: 1px solid var(--rb-border-primary);
+  padding-top: 12px;
+}
+
+.rb-impact-label {
+  color: var(--rb-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.rb-button-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Agree button */
+.rb-agree-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--rb-green-primary);
+  background: var(--rb-green-secondary);
+  color: var(--rb-green-text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rb-agree-btn:hover:not(:disabled) {
+  background: var(--rb-green-primary);
+}
+
+.rb-agree-btn:disabled {
+  cursor: not-allowed;
+}
+
+.rb-agree-btn.rb-active {
+  background: var(--rb-green-primary);
+}
+
+.rb-agree-btn.rb-inactive {
+  opacity: 0.4;
+}
+
+/* Disagree button */
+.rb-disagree-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--rb-red-primary);
+  background: var(--rb-red-secondary);
+  color: var(--rb-red-text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rb-disagree-btn:hover:not(:disabled) {
+  background: var(--rb-red-primary);
+}
+
+.rb-disagree-btn:disabled {
+  cursor: not-allowed;
+}
+
+.rb-disagree-btn.rb-active {
+  background: var(--rb-red-primary);
+}
+
+.rb-disagree-btn.rb-inactive {
+  opacity: 0.4;
+}
+
+/* Proceed/Dismiss button */
+.rb-proceed-btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--rb-border-primary);
+  background: transparent;
+  color: var(--rb-text-tertiary);
+  cursor: pointer;
+  margin-left: auto;
+  transition: all 0.15s;
+}
+
+.rb-proceed-btn:hover {
+  background: var(--rb-border-primary);
+  color: var(--rb-text-secondary);
+}
+
+/* Feedback message */
+.rb-feedback-message {
+  font-size: 11px;
+  margin-top: 8px;
+}
+
+.rb-feedback-success {
+  color: var(--rb-emerald-text);
+}
+
+.rb-feedback-info {
+  color: var(--rb-text-muted);
+}

@@ -26,11 +26,19 @@ type QuizScoreResponse = {
 
 type AuthContext = {
   authId: string;
-  accessToken: string;
 };
 
 type SupabaseQuizSyncRepository = {
   persistQuizVector(authContext: AuthContext, vector: QuizScoreRequest): Promise<void>;
+  getQuizResponses(authContext: AuthContext): Promise<QuizResponseRow[]>;
+};
+
+type QuizResponseRow = {
+  id: number;
+  user_id: number;
+  answers: unknown;
+  resulting_vector: [number, number, number] | number[];
+  created_at: string;
 };
 
 const readEnv = (key: string): string | undefined => {
@@ -79,7 +87,7 @@ const readAuthContext = (authorizationHeader?: string): AuthContext | null => {
     return null;
   }
 
-  return { authId, accessToken };
+  return { authId };
 };
 
 class SupabaseQuizSyncRestRepository implements SupabaseQuizSyncRepository {
@@ -91,7 +99,7 @@ class SupabaseQuizSyncRestRepository implements SupabaseQuizSyncRepository {
 
   public static fromEnv(fetcher?: typeof fetch): SupabaseQuizSyncRestRepository | null {
     const supabaseUrl = readEnv("SUPABASE_URL");
-    const supabaseKey = readEnv("SUPABASE_ANON_KEY") ?? readEnv("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseKey = readEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseKey) {
       return null;
@@ -110,7 +118,7 @@ class SupabaseQuizSyncRestRepository implements SupabaseQuizSyncRepository {
     const upsertResponse = await this.fetcher(upsertUrl, {
       method: "POST",
       headers: {
-        ...this.getHeaders(authContext.accessToken),
+        ...this.getHeaders(),
         "Content-Type": "application/json",
         Prefer: "resolution=merge-duplicates,return=representation",
       },
@@ -139,7 +147,7 @@ class SupabaseQuizSyncRestRepository implements SupabaseQuizSyncRepository {
     const quizResponse = await this.fetcher(quizUrl, {
       method: "POST",
       headers: {
-        ...this.getHeaders(authContext.accessToken),
+        ...this.getHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify([
@@ -156,10 +164,53 @@ class SupabaseQuizSyncRestRepository implements SupabaseQuizSyncRepository {
     }
   }
 
-  private getHeaders(accessToken: string): Record<string, string> {
+  public async getQuizResponses(authContext: AuthContext): Promise<QuizResponseRow[]> {
+    const userId = await this.getUserIdByAuthId(authContext.authId);
+    if (userId === null) {
+      return [];
+    }
+
+    const url = new URL(`${this.supabaseUrl}/rest/v1/quiz_responses`);
+    url.searchParams.set("user_id", `eq.${userId}`);
+    url.searchParams.set("select", "id,user_id,answers,resulting_vector,created_at");
+    url.searchParams.set("order", "created_at.asc");
+
+    const response = await this.fetcher(url, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase quiz response lookup failed: ${response.status}`);
+    }
+
+    return (await response.json()) as QuizResponseRow[];
+  }
+
+  private async getUserIdByAuthId(authId: string): Promise<number | null> {
+    const url = new URL(`${this.supabaseUrl}/rest/v1/users`);
+    url.searchParams.set("auth_id", `eq.${authId}`);
+    url.searchParams.set("select", "id");
+    url.searchParams.set("limit", "1");
+
+    const response = await this.fetcher(url, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase user lookup failed: ${response.status}`);
+    }
+
+    const rows = (await response.json()) as Array<{ id: number }>;
+    const userId = rows[0]?.id;
+    return typeof userId === "number" ? userId : null;
+  }
+
+  private getHeaders(): Record<string, string> {
     return {
       apikey: this.supabaseKey,
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${this.supabaseKey}`,
     };
   }
 }
@@ -245,4 +296,37 @@ quizRoutes.get("/status", (c) => {
     status: "ready",
     message: "Quiz scoring endpoint is available",
   });
+});
+
+quizRoutes.get("/responses", async (c) => {
+  const authContext = readAuthContext(
+    c.req.header("Authorization") ?? c.req.header("authorization")
+  );
+
+  if (!authContext) {
+    return c.json(
+      {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid authentication credentials",
+        },
+      },
+      401
+    );
+  }
+
+  if (!quizSyncRepository) {
+    return c.json(
+      {
+        error: {
+          code: "QUIZ_BACKEND_UNAVAILABLE",
+          message: "Quiz operations are unavailable",
+        },
+      },
+      503
+    );
+  }
+
+  const responses = await quizSyncRepository.getQuizResponses(authContext);
+  return c.json({ responses }, 200);
 });

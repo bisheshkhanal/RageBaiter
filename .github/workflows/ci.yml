@@ -2,46 +2,54 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
 
 jobs:
-  verify:
+  ci:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 10.2.0
+          version: 9
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: pnpm
+          node-version: 22
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright Chromium
-        run: pnpm -w test:e2e:install
-
       - name: Lint
-        run: pnpm -w lint
+        run: pnpm turbo run lint
 
       - name: Typecheck
-        run: pnpm -w typecheck
+        run: pnpm turbo run typecheck
 
       - name: Unit tests
-        run: pnpm -w test:unit
+        run: pnpm turbo run test:unit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
-      - name: Integration tests
-        run: pnpm -w test:integration
+      - name: Build
+        run: pnpm turbo run build
 
-      - name: E2E tests
-        run: pnpm -w test:e2e
+      - name: Install Playwright Chromium
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: pnpm --filter extension exec playwright install --with-deps chromium
+
+      - name: Extension E2E tests
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: xvfb-run -a pnpm --filter extension run test:e2e
+
+      - name: Upload Playwright traces on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: "**/test-results/**"
+          retention-days: 7

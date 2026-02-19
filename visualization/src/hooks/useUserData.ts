@@ -87,7 +87,18 @@ function getTokenFromUrl(): string {
   return params.get("token") ?? params.get("authToken") ?? "";
 }
 
-function getResolvedAuthId(): string | null {
+async function getSessionAuthId(): Promise<string | null> {
+  if (!supabase) return null;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
+async function getResolvedAuthId(): Promise<string | null> {
+  const sessionAuthId = await getSessionAuthId();
+  if (sessionAuthId) return sessionAuthId;
+
   const urlToken = getTokenFromUrl();
   return decodeAuthIdFromToken(urlToken || demoAuthToken);
 }
@@ -196,6 +207,27 @@ function emptyBridgeState(): BridgeStatePayload {
   };
 }
 
+const EXTENSION_ORIGIN = import.meta.env.VITE_EXTENSION_ORIGIN;
+
+function isValidBridgeOrigin(origin: string): boolean {
+  const isSameOrigin = origin === window.location.origin;
+  const matchesConfiguredExtensionOrigin = EXTENSION_ORIGIN && origin === EXTENSION_ORIGIN;
+
+  if (isSameOrigin || matchesConfiguredExtensionOrigin) {
+    return true;
+  }
+
+  if (!EXTENSION_ORIGIN) {
+    console.warn(
+      "[RageBaiter Bridge] VITE_EXTENSION_ORIGIN not set. " +
+        "Bridge will only accept same-origin messages. " +
+        "Set VITE_EXTENSION_ORIGIN=chrome-extension://your-extension-id for production."
+    );
+  }
+
+  return false;
+}
+
 function requestBridgeState(timeoutMs = 1000): Promise<BridgeStatePayload | null> {
   return new Promise((resolve) => {
     const requestId =
@@ -217,7 +249,7 @@ function requestBridgeState(timeoutMs = 1000): Promise<BridgeStatePayload | null
     };
 
     const onMessage = (event: MessageEvent<unknown>) => {
-      if (event.source !== window || event.origin !== window.location.origin) {
+      if (event.source !== window || !isValidBridgeOrigin(event.origin)) {
         return;
       }
 
@@ -246,7 +278,7 @@ function requestBridgeState(timeoutMs = 1000): Promise<BridgeStatePayload | null
 }
 
 function handleBridgeEventMessage(event: MessageEvent<unknown>): BridgeStatePayload | null {
-  if (event.source !== window || event.origin !== window.location.origin) {
+  if (event.source !== window || !isValidBridgeOrigin(event.origin)) {
     return null;
   }
 
@@ -344,7 +376,7 @@ export function useUserData() {
         return;
       }
 
-      const authId = getResolvedAuthId();
+      const authId = await getResolvedAuthId();
       const userQuery = authId
         ? supabase.from("users").select("*").eq("auth_id", authId)
         : supabase.from("users").select("*").eq("id", FALLBACK_USER_ID);

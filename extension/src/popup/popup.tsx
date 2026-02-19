@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { sendSettingsUpdated } from "../messaging/runtime.js";
+import { ErrorBoundary } from "../components/ErrorBoundary.js";
 import "./popup.css";
 
 function Popup(): React.ReactElement {
@@ -96,5 +97,9 @@ function Popup(): React.ReactElement {
 
 const root = document.getElementById("root");
 if (root) {
-  ReactDOM.createRoot(root).render(<Popup />);
+  ReactDOM.createRoot(root).render(
+    <ErrorBoundary>
+      <Popup />
+    </ErrorBoundary>
+  );
 }

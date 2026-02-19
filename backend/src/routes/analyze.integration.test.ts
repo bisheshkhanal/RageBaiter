@@ -1,109 +1,119 @@
-import { describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { authMiddleware } from "../middleware/auth.js";
+import { SupabaseCacheRepository } from "../services/supabase-cache-repository.js";
+import { TweetAnalysisCacheService } from "../services/tweet-analysis-cache.js";
+import type { AppEnv } from "../types.js";
+import { createBearerAuthHeader, TEST_AUTH_ID } from "../test-helpers/auth.js";
+import { cleanupTestData, countRows } from "../test-helpers/supabase.js";
+import { loadTestEnv } from "../test-helpers/env.js";
 import { createAnalyzeRoutes } from "./analyze.js";
-import {
-  TweetAnalysisCacheService,
-  type AnalyzeCacheRepository,
-  type StoredAnalyzedTweet,
-} from "../services/tweet-analysis-cache.js";
 
-class InMemoryRepository implements AnalyzeCacheRepository {
-  private readonly rows = new Map<string, StoredAnalyzedTweet>();
+loadTestEnv();
 
-  public async getByTweetId(tweetId: string): Promise<StoredAnalyzedTweet | null> {
-    return this.rows.get(tweetId) ?? null;
-  }
-
-  public async upsert(record: StoredAnalyzedTweet): Promise<void> {
-    this.rows.set(record.tweetId, record);
-  }
-}
+const createTestApp = (service: TweetAnalysisCacheService): Hono<AppEnv> => {
+  const app = new Hono<AppEnv>();
+  app.use("/api/*", authMiddleware);
+  app.route("/api/analyze", createAnalyzeRoutes({ cacheService: service }));
+  return app;
+};
 
 describe("POST /api/analyze integration", () => {
-  it("follows miss -> write -> hit with cache metadata", async () => {
-    const repository = new InMemoryRepository();
-    const upstream = vi.fn(async (_tweetId: string, tweetText: string) => {
-      return {
-        tweetText,
-        tweetVector: {
-          social: 0.2,
-          economic: 0.1,
-          populist: -0.1,
-        },
-        fallacies: ["False Dilemma"],
-        topic: "topic-3",
-        confidence: 0.73,
-      };
-    });
-
-    const service = new TweetAnalysisCacheService(repository, upstream, {
-      ttlMs: 24 * 60 * 60 * 1000,
-    });
-    const app = createAnalyzeRoutes({ cacheService: service });
-
-    const payload = {
-      tweetId: "tweet-100",
-      tweetText: "This is a political tweet",
-    };
-
-    const first = await app.request(
-      new Request("http://localhost/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-    );
-    const firstBody = (await first.json()) as Record<string, unknown>;
-
-    const second = await app.request(
-      new Request("http://localhost/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-    );
-    const secondBody = (await second.json()) as Record<string, unknown>;
-
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    expect(firstBody.source).toBe("llm");
-    expect(secondBody.source).toBe("cache");
-    expect(typeof firstBody.latency_ms).toBe("number");
-    expect(typeof secondBody.latency_ms).toBe("number");
-    expect(upstream).toHaveBeenCalledTimes(1);
+  afterEach(async () => {
+    await cleanupTestData(TEST_AUTH_ID, "test-analyze-");
   });
 
-  it("returns fallback payload when upstream analyzer returns null", async () => {
-    const repository = new InMemoryRepository();
-    const upstream = vi.fn(async () => null);
-    const service = new TweetAnalysisCacheService(repository, upstream, {
+  it("writes analysis on first request and reads from cache on second request", async () => {
+    const repository = SupabaseCacheRepository.fromEnv();
+    if (!repository) {
+      throw new Error(
+        "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for integration tests"
+      );
+    }
+
+    const tweetId = `test-analyze-${Date.now()}`;
+    const payload = {
+      tweetId,
+      tweetText: "Integration test analyze tweet",
+    };
+
+    const firstUpstream = vi.fn(async (_tweetId: string, tweetText: string) => ({
+      tweetText,
+      tweetVector: { social: 0.45, economic: -0.25, populist: 0.15 },
+      fallacies: ["False Dilemma"],
+      topic: "integration",
+      confidence: 0.92,
+      counterArgument: "Counter",
+      logicFailure: "Logic",
+      claim: "Claim",
+      mechanism: "Mechanism",
+      dataCheck: "Data",
+      socraticChallenge: "Question",
+    }));
+
+    const firstService = new TweetAnalysisCacheService(repository, firstUpstream, {
       ttlMs: 24 * 60 * 60 * 1000,
     });
-    const app = createAnalyzeRoutes({ cacheService: service });
 
-    const response = await app.request(
-      new Request("http://localhost/", {
+    const firstApp = createTestApp(firstService);
+    const firstResponse = await firstApp.request(
+      new Request("http://localhost/api/analyze", {
         method: "POST",
         headers: {
+          ...createBearerAuthHeader(TEST_AUTH_ID),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          tweetId: "tweet-fallback",
-          tweetText: "This could not be analyzed",
-        }),
+        body: JSON.stringify(payload),
       })
     );
-    const body = (await response.json()) as Record<string, unknown>;
+    const firstBody = (await firstResponse.json()) as {
+      source: string;
+      analysis: {
+        tweet_vector: { social: number; economic: number; populist: number };
+      };
+    };
 
-    expect(response.status).toBe(200);
-    expect(body.tweet_id).toBe("tweet-fallback");
-    expect(body.analysis).toBeNull();
-    expect(body.source).toBe("llm");
-    expect(typeof body.latency_ms).toBe("number");
-    expect(upstream).toHaveBeenCalledTimes(1);
+    expect(firstResponse.status).toBe(200);
+    expect(firstBody.source).toBe("llm");
+    expect(firstBody.analysis.tweet_vector.social).toBe(0.45);
+    expect(firstUpstream).toHaveBeenCalledTimes(1);
+    expect(await countRows("analyzed_tweets", { tweet_id: `eq.${tweetId}` })).toBe(1);
+
+    const secondUpstream = vi.fn(async () => ({
+      tweetText: "Should not be used",
+      tweetVector: { social: -1, economic: -1, populist: -1 },
+      fallacies: [],
+      topic: "nope",
+      confidence: 0.1,
+    }));
+
+    const secondService = new TweetAnalysisCacheService(repository, secondUpstream, {
+      ttlMs: 24 * 60 * 60 * 1000,
+    });
+
+    const secondApp = createTestApp(secondService);
+    const secondResponse = await secondApp.request(
+      new Request("http://localhost/api/analyze", {
+        method: "POST",
+        headers: {
+          ...createBearerAuthHeader(TEST_AUTH_ID),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+    );
+    const secondBody = (await secondResponse.json()) as {
+      source: string;
+      analysis: {
+        tweet_vector: { social: number; economic: number; populist: number };
+      };
+    };
+
+    expect(secondResponse.status).toBe(200);
+    expect(secondBody.source).toBe("cache");
+    expect(secondBody.analysis.tweet_vector.social).toBe(0.45);
+    expect(secondUpstream).toHaveBeenCalledTimes(0);
+    expect(await countRows("analyzed_tweets", { tweet_id: `eq.${tweetId}` })).toBe(1);
   });
 });

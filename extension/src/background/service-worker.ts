@@ -2,14 +2,12 @@ import {
   MESSAGE_TYPES,
   isExtensionMessage,
   type ExtensionMessage,
-  type LlmConnectionTestPayload,
-  type LlmConnectionTestResult,
   type MessageAck,
   type PoliticalVectorPayload,
 } from "../messaging/protocol.js";
 import { sendInterventionTriggerToTab } from "../messaging/runtime.js";
 import { createDecisionEngine, type TweetAnalysis, type UserProfile } from "./decision-engine.js";
-import { clearLlmCredentials, storeLlmConfig } from "../lib/llm-config.js";
+import { storeLlmConfig, clearLegacyLlmStorageKeys } from "../lib/llm-config.js";
 import { siteConfigStorage, initializeSiteConfig } from "../lib/site-storage.js";
 import {
   isExtensionActiveOnUrl,
@@ -19,8 +17,17 @@ import {
 } from "../lib/site-config.js";
 import { applyFeedbackDrift, type FeedbackType } from "../lib/vector-feedback.js";
 import { PipelineOrchestrator, createBackendFetcher, type PipelineConfig } from "./pipeline.js";
+import { logger } from "../lib/logger.js";
+import * as Sentry from "@sentry/browser";
 
-console.log("RageBaiter SW ready");
+logger.info("RageBaiter SW ready");
+
+if (import.meta.env.VITE_SENTRY_DSN) {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    environment: import.meta.env.MODE,
+  });
+}
 
 const ok = (): MessageAck<void> => ({ ok: true, payload: undefined });
 
@@ -77,148 +84,18 @@ type FeedbackEvent = {
   syncAttempts: number;
 };
 
-const FEEDBACK_QUEUE_STORAGE_KEY = "feedbackSyncQueue";
+const FEEDBACK_QUEUE_STORAGE_KEY = "feedbackQueue";
+const LEGACY_FEEDBACK_QUEUE_STORAGE_KEY = "feedbackSyncQueue";
 const VECTOR_HISTORY_STORAGE_KEY = "vectorHistory";
+const TWEET_VECTOR_SESSION_STORAGE_KEY = "tweetVectors";
+const FEEDBACK_RETRY_ALARM_NAME = "feedbackRetry";
 const MAX_FEEDBACK_QUEUE_SIZE = 150;
 const MAX_VECTOR_HISTORY_SIZE = 100;
 const MAX_TWEET_VECTOR_CACHE_SIZE = 200;
 
 const analyzedTweetVectors = new Map<string, PoliticalVectorPayload>();
-
-const testLlmConnection = async (
-  payload: LlmConnectionTestPayload
-): Promise<LlmConnectionTestResult> => {
-  const startTime = Date.now();
-
-  try {
-    switch (payload.provider) {
-      case "openai": {
-        const response = await fetch("https://api.openai.com/v1/models", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${payload.apiKey ?? ""}` },
-        });
-        if (!response.ok) {
-          const errorData = (await response
-            .json()
-            .catch(() => ({ error: { message: "Unknown error" } }))) as {
-            error?: { message?: string };
-          };
-          return {
-            success: false,
-            message: errorData.error?.message || `HTTP ${response.status}`,
-            latencyMs: Date.now() - startTime,
-          };
-        }
-        return {
-          success: true,
-          message: "Successfully connected to OpenAI API",
-          latencyMs: Date.now() - startTime,
-        };
-      }
-      case "anthropic": {
-        const response = await fetch("https://api.anthropic.com/v1/models", {
-          method: "GET",
-          headers: { "x-api-key": payload.apiKey ?? "", "anthropic-version": "2023-06-01" },
-        });
-        if (!response.ok) {
-          const errorData = (await response
-            .json()
-            .catch(() => ({ error: { message: "Unknown error" } }))) as {
-            error?: { message?: string };
-          };
-          return {
-            success: false,
-            message: errorData.error?.message || `HTTP ${response.status}`,
-            latencyMs: Date.now() - startTime,
-          };
-        }
-        return {
-          success: true,
-          message: "Successfully connected to Anthropic API",
-          latencyMs: Date.now() - startTime,
-        };
-      }
-      case "google": {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models?key=${payload.apiKey ?? ""}`,
-          { method: "GET" }
-        );
-        if (!response.ok) {
-          const errorData = (await response
-            .json()
-            .catch(() => ({ error: { message: "Unknown error" } }))) as {
-            error?: { message?: string };
-          };
-          return {
-            success: false,
-            message: errorData.error?.message || `HTTP ${response.status}`,
-            latencyMs: Date.now() - startTime,
-          };
-        }
-        return {
-          success: true,
-          message: "Successfully connected to Google AI Studio API",
-          latencyMs: Date.now() - startTime,
-        };
-      }
-      case "perplexity": {
-        const response = await fetch("https://api.perplexity.ai/models", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${payload.apiKey ?? ""}` },
-        });
-        if (!response.ok) {
-          return {
-            success: false,
-            message: `HTTP ${response.status}: Perplexity API error`,
-            latencyMs: Date.now() - startTime,
-          };
-        }
-        return {
-          success: true,
-          message: "Successfully connected to Perplexity API",
-          latencyMs: Date.now() - startTime,
-        };
-      }
-      case "custom": {
-        if (!payload.customBaseUrl) {
-          return {
-            success: false,
-            message: "Custom base URL is required",
-            latencyMs: Date.now() - startTime,
-          };
-        }
-        const response = await fetch(`${payload.customBaseUrl}/models`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${payload.apiKey ?? ""}` },
-        });
-        if (!response.ok) {
-          return {
-            success: false,
-            message: `HTTP ${response.status}: Custom endpoint error`,
-            latencyMs: Date.now() - startTime,
-          };
-        }
-        return {
-          success: true,
-          message: "Successfully connected to custom endpoint",
-          latencyMs: Date.now() - startTime,
-        };
-      }
-      default:
-        return {
-          success: false,
-          message: `Provider ${payload.provider} not yet implemented`,
-          latencyMs: Date.now() - startTime,
-        };
-    }
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : "Connection failed",
-      latencyMs: Date.now() - startTime,
-    };
-  }
-};
+let hasHydratedTweetVectorCache = false;
+let isSyncingFeedbackQueue = false;
 
 const getStoredUserProfile = async (): Promise<UserProfile> => {
   const stored = (await chrome.storage.local.get(["userVector", "decisionConfig"])) as {
@@ -257,11 +134,26 @@ const toStoredVector = (vector: PoliticalVectorPayload): StoredUserVector => ({
 });
 
 const getFeedbackQueue = async (): Promise<FeedbackEvent[]> => {
-  const stored = (await chrome.storage.local.get(FEEDBACK_QUEUE_STORAGE_KEY)) as {
+  const stored = (await chrome.storage.local.get([
+    FEEDBACK_QUEUE_STORAGE_KEY,
+    LEGACY_FEEDBACK_QUEUE_STORAGE_KEY,
+  ])) as {
+    feedbackQueue?: FeedbackEvent[];
     feedbackSyncQueue?: FeedbackEvent[];
   };
 
-  return Array.isArray(stored.feedbackSyncQueue) ? stored.feedbackSyncQueue : [];
+  if (Array.isArray(stored.feedbackQueue)) {
+    return stored.feedbackQueue;
+  }
+
+  if (Array.isArray(stored.feedbackSyncQueue) && stored.feedbackSyncQueue.length > 0) {
+    const migratedQueue = stored.feedbackSyncQueue.slice(-MAX_FEEDBACK_QUEUE_SIZE);
+    await chrome.storage.local.set({ [FEEDBACK_QUEUE_STORAGE_KEY]: migratedQueue });
+    await chrome.storage.local.remove(LEGACY_FEEDBACK_QUEUE_STORAGE_KEY);
+    return migratedQueue;
+  }
+
+  return [];
 };
 
 const storeFeedbackQueue = async (queue: FeedbackEvent[]): Promise<void> => {
@@ -311,18 +203,88 @@ const updateHistorySyncAttempts = async (remainingQueue: FeedbackEvent[]): Promi
   await chrome.storage.local.set({ [VECTOR_HISTORY_STORAGE_KEY]: nextHistory });
 };
 
-const cacheTweetVector = (tweetId: string, vector: PoliticalVectorPayload): void => {
-  analyzedTweetVectors.delete(tweetId);
-  analyzedTweetVectors.set(tweetId, vector);
+const getStoredTweetVectors = async (): Promise<Record<string, PoliticalVectorPayload>> => {
+  const stored = (await chrome.storage.session.get(TWEET_VECTOR_SESSION_STORAGE_KEY)) as {
+    tweetVectors?: Record<string, PoliticalVectorPayload>;
+  };
 
-  if (analyzedTweetVectors.size <= MAX_TWEET_VECTOR_CACHE_SIZE) {
+  return stored.tweetVectors ?? {};
+};
+
+const syncTweetVectorsToSessionStorage = async (): Promise<void> => {
+  const entries = Array.from(analyzedTweetVectors.entries());
+  const boundedEntries = entries.slice(-MAX_TWEET_VECTOR_CACHE_SIZE);
+  await chrome.storage.session.set({
+    [TWEET_VECTOR_SESSION_STORAGE_KEY]: Object.fromEntries(boundedEntries),
+  });
+};
+
+const hydrateTweetVectorCache = async (): Promise<void> => {
+  if (hasHydratedTweetVectorCache) {
     return;
   }
 
-  const oldest = analyzedTweetVectors.keys().next().value;
-  if (typeof oldest === "string") {
-    analyzedTweetVectors.delete(oldest);
+  const storedVectors = await getStoredTweetVectors();
+  const entries = Object.entries(storedVectors);
+  analyzedTweetVectors.clear();
+
+  for (const [tweetId, vector] of entries.slice(-MAX_TWEET_VECTOR_CACHE_SIZE)) {
+    analyzedTweetVectors.set(tweetId, vector);
   }
+
+  hasHydratedTweetVectorCache = true;
+};
+
+const cacheTweetVector = async (tweetId: string, vector: PoliticalVectorPayload): Promise<void> => {
+  await hydrateTweetVectorCache();
+
+  analyzedTweetVectors.delete(tweetId);
+  analyzedTweetVectors.set(tweetId, vector);
+
+  while (analyzedTweetVectors.size > MAX_TWEET_VECTOR_CACHE_SIZE) {
+    const oldest = analyzedTweetVectors.keys().next().value;
+    if (typeof oldest === "string") {
+      analyzedTweetVectors.delete(oldest);
+    }
+  }
+
+  const storedVectors = await getStoredTweetVectors();
+  const merged = {
+    ...storedVectors,
+    [tweetId]: vector,
+  };
+  const boundedEntries = Object.entries(merged).slice(-MAX_TWEET_VECTOR_CACHE_SIZE);
+  await chrome.storage.session.set({
+    [TWEET_VECTOR_SESSION_STORAGE_KEY]: Object.fromEntries(boundedEntries),
+  });
+};
+
+const getCachedTweetVector = async (
+  tweetId: string
+): Promise<PoliticalVectorPayload | undefined> => {
+  await hydrateTweetVectorCache();
+
+  const cached = analyzedTweetVectors.get(tweetId);
+  if (cached) {
+    return cached;
+  }
+
+  const storedVectors = await getStoredTweetVectors();
+  const storedVector = storedVectors[tweetId];
+  if (!storedVector) {
+    return undefined;
+  }
+
+  analyzedTweetVectors.set(tweetId, storedVector);
+  while (analyzedTweetVectors.size > MAX_TWEET_VECTOR_CACHE_SIZE) {
+    const oldest = analyzedTweetVectors.keys().next().value;
+    if (typeof oldest === "string") {
+      analyzedTweetVectors.delete(oldest);
+    }
+  }
+  await syncTweetVectorsToSessionStorage();
+
+  return storedVector;
 };
 
 const buildFeedbackHeaders = async (): Promise<Record<string, string>> => {
@@ -351,8 +313,15 @@ const buildFeedbackHeaders = async (): Promise<Record<string, string>> => {
 };
 
 const syncFeedbackQueue = async (): Promise<void> => {
+  if (isSyncingFeedbackQueue) {
+    return;
+  }
+
+  isSyncingFeedbackQueue = true;
+
   const queue = await getFeedbackQueue();
   if (queue.length === 0) {
+    isSyncingFeedbackQueue = false;
     return;
   }
 
@@ -361,40 +330,58 @@ const syncFeedbackQueue = async (): Promise<void> => {
   const headers = await buildFeedbackHeaders();
   const remaining: FeedbackEvent[] = [];
 
-  for (const event of queue) {
-    try {
-      const response = await fetch(`${backendUrl}/api/feedback`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          id: event.id,
-          tweetId: event.tweetId,
-          feedback: event.feedback,
-          timestamp: event.timestamp,
-          tweetVector: event.tweetVector,
-          beforeVector: event.beforeVector,
-          afterVector: event.afterVector,
-          delta: event.delta,
-        }),
-      });
+  try {
+    for (const event of queue) {
+      try {
+        const response = await fetch(`${backendUrl}/api/feedback`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            id: event.id,
+            tweetId: event.tweetId,
+            feedback: event.feedback,
+            timestamp: event.timestamp,
+            tweetVector: event.tweetVector,
+            beforeVector: event.beforeVector,
+            afterVector: event.afterVector,
+            delta: event.delta,
+          }),
+        });
 
-      if (!response.ok) {
+        if (!response.ok) {
+          remaining.push({
+            ...event,
+            syncAttempts: event.syncAttempts + 1,
+          });
+          continue;
+        }
+      } catch {
         remaining.push({
           ...event,
           syncAttempts: event.syncAttempts + 1,
         });
-        continue;
       }
-    } catch {
-      remaining.push({
-        ...event,
-        syncAttempts: event.syncAttempts + 1,
-      });
     }
-  }
 
-  await storeFeedbackQueue(remaining);
-  await updateHistorySyncAttempts(remaining);
+    await storeFeedbackQueue(remaining);
+    await updateHistorySyncAttempts(remaining);
+  } finally {
+    isSyncingFeedbackQueue = false;
+  }
+};
+
+const ensureFeedbackRetryAlarm = async (): Promise<void> => {
+  await chrome.alarms.create(FEEDBACK_RETRY_ALARM_NAME, {
+    periodInMinutes: 5,
+  });
+};
+
+const initializeServiceWorkerState = async (): Promise<void> => {
+  await loadPipelineConfig();
+  await hydrateTweetVectorCache();
+  await syncFeedbackQueue();
+  await ensureFeedbackRetryAlarm();
+  await updateBadgeForAllTabs();
 };
 
 const applyFeedbackAndPersist = async (payload: {
@@ -564,7 +551,7 @@ const routeMessage = async (
 ): Promise<MessageAck<unknown>> => {
   switch (message.type) {
     case MESSAGE_TYPES.TWEET_DETECTED: {
-      console.log("[RageBaiter] Tweet detected", message.payload.tweetId);
+      void logger.info("Tweet detected", message.payload.tweetId);
 
       if (!sender.tab?.id) {
         return ok();
@@ -581,20 +568,14 @@ const routeMessage = async (
           ...(tabUrl ? { tabUrl } : {}),
         })
         .then((result) => {
-          console.log(
-            "[RageBaiter][Pipeline]",
-            result.tweetId,
-            "stage:",
-            result.stage,
-            result.error ?? ""
-          );
+          void logger.info("Pipeline", result.tweetId, "stage:", result.stage, result.error ?? "");
         });
 
       return ok();
     }
 
     case MESSAGE_TYPES.ANALYZE_RESULT: {
-      console.log("[RageBaiter] Analyze result received", message.payload.tweetId);
+      void logger.info("Analyze result received", message.payload.tweetId);
 
       if (!sender.tab?.id) {
         return ok();
@@ -608,12 +589,12 @@ const routeMessage = async (
         fallacies: message.payload.fallacies,
       };
 
-      cacheTweetVector(message.payload.tweetId, message.payload.tweetVector);
+      await cacheTweetVector(message.payload.tweetId, message.payload.tweetVector);
 
       if (sender.tab.url) {
         const currentConfig = await siteConfigStorage.getConfig();
         if (!isExtensionActiveOnUrl(sender.tab.url, currentConfig)) {
-          console.log("[RageBaiter] Intervention blocked: site or extension disabled");
+          void logger.info("Intervention blocked: site or extension disabled");
           return ok();
         }
       }
@@ -621,7 +602,7 @@ const routeMessage = async (
       const userProfile = await getStoredUserProfile();
       const decision = decisionEngine.evaluateTweet(tweetAnalysis, userProfile);
 
-      console.debug("[RageBaiter][DecisionTree]", decision.log.tree, decision.log.fields);
+      void logger.debug("[DecisionTree]", decision.log.tree, decision.log.fields);
 
       if (!decision.shouldIntervene) {
         return ok();
@@ -647,14 +628,10 @@ const routeMessage = async (
     }
 
     case MESSAGE_TYPES.FEEDBACK_SUBMITTED: {
-      console.log(
-        "[RageBaiter] Feedback submitted",
-        message.payload.tweetId,
-        message.payload.feedback
-      );
+      void logger.info("Feedback submitted", message.payload.tweetId, message.payload.feedback);
 
       const tweetVector =
-        message.payload.tweetVector ?? analyzedTweetVectors.get(message.payload.tweetId);
+        message.payload.tweetVector ?? (await getCachedTweetVector(message.payload.tweetId));
 
       if (!tweetVector) {
         return fail(`Missing tweet vector for feedback on ${message.payload.tweetId}`, true);
@@ -698,40 +675,29 @@ const routeMessage = async (
       return ok();
 
     case MESSAGE_TYPES.LLM_CONFIG_UPDATED: {
-      console.log("[RageBaiter] LLM config updated", message.payload.provider);
+      void logger.info("LLM config updated", message.payload.provider);
       await storeLlmConfig({
-        provider: message.payload.provider,
-        model: message.payload.model,
-        apiKey: message.payload.apiKey,
-        customBaseUrl: message.payload.customBaseUrl,
-        useFallback: message.payload.useFallback,
+        provider: "internal",
       });
       return ok();
     }
 
     case MESSAGE_TYPES.LLM_CONNECTION_TEST: {
-      console.log("[RageBaiter] Testing LLM connection", message.payload.provider);
-      const result = await testLlmConnection(message.payload);
-      return { ok: true, payload: result };
+      void logger.info("LLM connection test ignored (internal only)");
+      return {
+        ok: true,
+        payload: { success: true, message: "Internal API is always available", latencyMs: 0 },
+      };
     }
 
     case MESSAGE_TYPES.LLM_CREDENTIALS_CLEARED: {
-      console.log("[RageBaiter] LLM credentials cleared");
-      await clearLlmCredentials();
-      await chrome.storage.local.set({
-        llmProvider: "internal",
-        llmModel: "",
-        llmUseFallback: true,
-      });
+      void logger.info("LLM credentials cleared");
+      await clearLegacyLlmStorageKeys();
       return ok();
     }
 
     case MESSAGE_TYPES.SITE_CONFIG_UPDATED: {
-      console.log(
-        "[RageBaiter] Site config updated",
-        message.payload.siteId,
-        message.payload.enabled
-      );
+      void logger.info("Site config updated", message.payload.siteId, message.payload.enabled);
       const current = await siteConfigStorage.getConfig();
       const siteId = message.payload.siteId as SupportedSite;
       const updated = updateSiteEnabled(current, siteId, message.payload.enabled);
@@ -749,7 +715,7 @@ const routeMessage = async (
     }
 
     case MESSAGE_TYPES.GLOBAL_PAUSE_TOGGLED: {
-      console.log("[RageBaiter] Global pause toggled", message.payload.paused);
+      void logger.info("Global pause toggled", message.payload.paused);
       const current = await siteConfigStorage.getConfig();
       const updated = toggleGlobalEnabled({ ...current, globalEnabled: !message.payload.paused });
       await siteConfigStorage.setConfig(updated);
@@ -762,15 +728,41 @@ const routeMessage = async (
   }
 };
 
-chrome.runtime.onInstalled.addListener(async () => {
-  console.log("[RageBaiter] Extension installed");
+chrome.runtime.onInstalled.addListener(async (details) => {
+  void logger.info("Extension installed", details.reason);
+
+  if (details.reason === "install") {
+    await chrome.storage.local.set({ isFirstInstall: true });
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.sidePanel.open({ tabId: tabs[0].id }).catch((error) => {
+          void logger.info("Could not auto-open side panel:", error);
+        });
+      }
+    });
+  }
+
   await initializeSiteConfig();
-  await loadPipelineConfig();
-  await syncFeedbackQueue();
+  await initializeServiceWorkerState();
+  await clearLegacyLlmStorageKeys();
 });
 
-void loadPipelineConfig();
-void syncFeedbackQueue();
+chrome.runtime.onStartup.addListener(async () => {
+  void logger.info("Extension startup");
+  await ensureFeedbackRetryAlarm();
+  await initializeServiceWorkerState();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== FEEDBACK_RETRY_ALARM_NAME) {
+    return;
+  }
+
+  void syncFeedbackQueue();
+});
+
+void initializeServiceWorkerState();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") {
@@ -781,7 +773,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const hasRelevantChange = settingsKeys.some((key) => key in changes);
 
   if (hasRelevantChange) {
-    console.log("[RageBaiter] Settings changed, reloading pipeline config");
+    void logger.info("Settings changed, reloading pipeline config");
     void loadPipelineConfig();
   }
 });
@@ -809,7 +801,8 @@ chrome.runtime.onMessage.addListener((incomingMessage, sender, sendResponse) => 
     .then((response) => {
       sendResponse(response);
     })
-    .catch((error) => {
+    .catch((error: unknown) => {
+      Sentry.captureException(error);
       const details = error instanceof Error ? error.message : String(error);
       sendResponse(fail(details, true));
     });

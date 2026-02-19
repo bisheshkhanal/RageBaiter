@@ -438,3 +438,102 @@
 .stat-grid:has(.stat-card:nth-child(3)) {
   grid-template-columns: repeat(3, 1fr);
 }
+
+.onboarding-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 20px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.onboarding-icon {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  color: #3b82f6;
+}
+
+.onboarding-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 12px 0;
+}
+
+.onboarding-description {
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0 0 24px 0;
+  max-width: 320px;
+}
+
+.onboarding-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 28px;
+  width: 100%;
+  max-width: 260px;
+}
+
+.onboarding-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f9fafb;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.onboarding-feature-icon {
+  font-size: 16px;
+}
+
+.onboarding-cta {
+  width: 100%;
+  max-width: 260px;
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.onboarding-success-banner {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #166534;
+  line-height: 1.5;
+}
+
+.onboarding-success-banner strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+
+.onboarding-link {
+  color: #15803d;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.onboarding-link:hover {
+  color: #166534;
+}

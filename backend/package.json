@@ -10,11 +10,12 @@
     "build": "tsc -p tsconfig.json",
     "test": "pnpm run test:unit && pnpm run test:integration",
     "test:unit": "vitest run --config vitest.config.ts --passWithNoTests",
-    "test:integration": "vitest run --config vitest.config.ts \"src/**/*.integration.test.ts\" --passWithNoTests",
+    "test:integration": "vitest run --config vitest.config.ts src/**/*.integration.test.ts --passWithNoTests",
     "test:e2e": "vitest run --config vitest.config.ts \"src/**/*.e2e.test.ts\" --passWithNoTests"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",
+    "@sentry/node": "^10.39.0",
     "hono": "^4.6.15"
   },
   "devDependencies": {

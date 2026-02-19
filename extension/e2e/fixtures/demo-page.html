@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RageBaiter Demo Tweet</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #f5f8fa;
+        color: #0f1419;
+      }
+
+      main {
+        max-width: 640px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+
+      article[data-testid="tweet"] {
+        border: 1px solid #cfd9de;
+        border-radius: 16px;
+        background: #ffffff;
+        padding: 1rem;
+      }
+
+      [data-testid="User-Name"] {
+        display: flex;
+        gap: 0.4rem;
+        font-weight: 600;
+      }
+
+      [data-testid="tweetText"] {
+        margin: 0.75rem 0;
+        line-height: 1.5;
+      }
+
+      .metrics {
+        display: flex;
+        gap: 0.75rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article data-testid="tweet" role="article" aria-label="Tweet by @policywatch">
+        <header>
+          <div data-testid="User-Name">
+            <a href="/policywatch">@policywatch</a>
+          </div>
+        </header>
+
+        <div data-testid="tweetText" lang="en">
+          The election debate shows why immigration policy and border legislation need urgent
+          reform.
+        </div>
+
+        <a href="/policywatch/status/1729382256910270464">
+          <time datetime="2026-02-18T11:30:00.000Z">11:30 AM · Feb 18, 2026</time>
+        </a>
+
+        <div class="metrics" aria-label="Tweet actions">
+          <div data-testid="reply" role="button" aria-label="12 Replies">
+            <span data-testid="app-text-transition-container">12</span>
+          </div>
+          <div data-testid="retweet" role="button" aria-label="5 Reposts">
+            <span data-testid="app-text-transition-container">5</span>
+          </div>
+          <div data-testid="like" role="button" aria-label="39 Likes">
+            <span data-testid="app-text-transition-container">39</span>
+          </div>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

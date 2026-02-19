@@ -11,14 +11,16 @@
     "test": "pnpm run test:unit && pnpm run test:integration",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.config.ts \"tests/**/*.integration.test.ts\" --passWithNoTests",
-    "test:e2e": "pnpm run build && playwright test --config playwright.config.ts"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@sentry/browser": "^10.39.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.31",
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4.0.6",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",

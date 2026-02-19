@@ -38,8 +38,8 @@ export type StoredAnalyzedTweet = {
 };
 
 export type AnalyzeCacheRepository = {
-  getByTweetId(tweetId: string): Promise<StoredAnalyzedTweet | null>;
-  upsert(record: StoredAnalyzedTweet): Promise<void>;
+  getByTweetId(tweetId: string, authId?: string): Promise<StoredAnalyzedTweet | null>;
+  upsert(record: StoredAnalyzedTweet, authId?: string): Promise<void>;
 };
 
 type AnalyzeUpstream = (
@@ -161,8 +161,12 @@ export class TweetAnalysisCacheService {
     );
   }
 
-  public async analyze(tweetId: string, tweetText: string): Promise<AnalyzeResult | null> {
-    const cached = await this.checkCache(tweetId);
+  public async analyze(
+    tweetId: string,
+    tweetText: string,
+    authId?: string
+  ): Promise<AnalyzeResult | null> {
+    const cached = await this.checkCache(tweetId, authId);
     if (cached) {
       return {
         source: "cache",
@@ -170,20 +174,21 @@ export class TweetAnalysisCacheService {
       };
     }
 
-    const existing = this.inFlight.get(tweetId);
+    const inFlightKey = `${authId ?? ""}:${tweetId}`;
+    const existing = this.inFlight.get(inFlightKey);
     if (existing) {
       return existing;
     }
 
-    const inflight = this.analyzeAndCache(tweetId, tweetText).finally(() => {
-      this.inFlight.delete(tweetId);
+    const inflight = this.analyzeAndCache(tweetId, tweetText, authId).finally(() => {
+      this.inFlight.delete(inFlightKey);
     });
 
-    this.inFlight.set(tweetId, inflight);
+    this.inFlight.set(inFlightKey, inflight);
     return inflight;
   }
 
-  public async checkCache(tweetId: string): Promise<AnalyzedTweet | null> {
+  public async checkCache(tweetId: string, authId?: string): Promise<AnalyzedTweet | null> {
     const memoryHit = this.memoryCache.get(tweetId);
     if (memoryHit) {
       return {
@@ -195,7 +200,7 @@ export class TweetAnalysisCacheService {
     let stored: StoredAnalyzedTweet | null = null;
 
     try {
-      stored = await this.repository.getByTweetId(tweetId);
+      stored = await this.repository.getByTweetId(tweetId, authId);
     } catch {
       return null;
     }
@@ -213,11 +218,15 @@ export class TweetAnalysisCacheService {
     return analyzed;
   }
 
-  public async writeCache(tweetId: string, analysis: TweetAnalysis): Promise<void> {
+  public async writeCache(
+    tweetId: string,
+    analysis: TweetAnalysis,
+    authId?: string
+  ): Promise<void> {
     this.memoryCache.set(tweetId, analysis);
 
     try {
-      await this.repository.upsert(toStoredRecord(tweetId, analysis));
+      await this.repository.upsert(toStoredRecord(tweetId, analysis), authId);
     } catch {
       return;
     }
@@ -227,7 +236,11 @@ export class TweetAnalysisCacheService {
     return this.memoryCache.size();
   }
 
-  private async analyzeAndCache(tweetId: string, tweetText: string): Promise<AnalyzeResult | null> {
+  private async analyzeAndCache(
+    tweetId: string,
+    tweetText: string,
+    authId?: string
+  ): Promise<AnalyzeResult | null> {
     const now = this.now();
     const upstream = await this.upstreamAnalyzer(tweetId, tweetText);
 
@@ -241,7 +254,7 @@ export class TweetAnalysisCacheService {
       expiresAt: now + this.ttlMs,
     };
 
-    await this.writeCache(tweetId, analysis);
+    await this.writeCache(tweetId, analysis, authId);
 
     return {
       source: "llm",

@@ -63,7 +63,7 @@ export class SupabaseCacheRepository implements AnalyzeCacheRepository {
 
   public static fromEnv(fetcher?: typeof fetch): SupabaseCacheRepository | null {
     const supabaseUrl = readEnv("SUPABASE_URL");
-    const serviceRoleKey = readEnv("SUPABASE_SERVICE_ROLE_KEY") ?? readEnv("SUPABASE_ANON_KEY");
+    const serviceRoleKey = readEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !serviceRoleKey) {
       return null;
@@ -72,7 +72,10 @@ export class SupabaseCacheRepository implements AnalyzeCacheRepository {
     return new SupabaseCacheRepository(supabaseUrl, serviceRoleKey, fetcher);
   }
 
-  public async getByTweetId(tweetId: string): Promise<StoredAnalyzedTweet | null> {
+  public async getByTweetId(
+    tweetId: string,
+    _authId?: string
+  ): Promise<StoredAnalyzedTweet | null> {
     const url = new URL(`${this.supabaseUrl}/rest/v1/analyzed_tweets`);
     url.searchParams.set("tweet_id", `eq.${tweetId}`);
     url.searchParams.set(
@@ -100,7 +103,7 @@ export class SupabaseCacheRepository implements AnalyzeCacheRepository {
     return toStoredAnalyzedTweet(row);
   }
 
-  public async upsert(record: StoredAnalyzedTweet): Promise<void> {
+  public async upsert(record: StoredAnalyzedTweet, _authId?: string): Promise<void> {
     const response = await this.fetcher(
       `${this.supabaseUrl}/rest/v1/analyzed_tweets?on_conflict=tweet_id`,
       {
@@ -128,11 +131,14 @@ export class SupabaseCacheRepository implements AnalyzeCacheRepository {
 }
 
 export class NoopCacheRepository implements AnalyzeCacheRepository {
-  public async getByTweetId(_tweetId: string): Promise<StoredAnalyzedTweet | null> {
+  public async getByTweetId(
+    _tweetId: string,
+    _authId?: string
+  ): Promise<StoredAnalyzedTweet | null> {
     return null;
   }
 
-  public async upsert(_record: StoredAnalyzedTweet): Promise<void> {
+  public async upsert(_record: StoredAnalyzedTweet, _authId?: string): Promise<void> {
     return;
   }
 }

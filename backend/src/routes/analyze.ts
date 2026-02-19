@@ -85,8 +85,12 @@ const toResponse = (result: AnalyzeResult, latencyMs: number) => {
   };
 };
 
-export const createAnalyzeRoutes = (options: AnalyzeRoutesOptions = {}): Hono => {
-  const analyzeRoutes = new Hono();
+type AnalyzeRouteVariables = {
+  authId?: string;
+};
+
+export const createAnalyzeRoutes = (options: AnalyzeRoutesOptions = {}) => {
+  const analyzeRoutes = new Hono<{ Variables: AnalyzeRouteVariables }>();
   const cacheService = options.cacheService ?? buildDefaultService();
 
   analyzeRoutes.post("/", async (c) => {
@@ -106,7 +110,12 @@ export const createAnalyzeRoutes = (options: AnalyzeRoutesOptions = {}): Hono =>
       );
     }
 
-    const result = await cacheService.analyze(parsed.tweetId, parsed.tweetText);
+    const authId = c.get("authId");
+    const result = await cacheService.analyze(
+      parsed.tweetId,
+      parsed.tweetText,
+      typeof authId === "string" && authId.length > 0 ? authId : undefined
+    );
     const latencyMs = Date.now() - startedAt;
 
     if (!result) {

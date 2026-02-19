@@ -3,14 +3,15 @@
   "name": "RageBaiter",
   "version": "0.0.1",
   "description": "Detect political echo chambers and logical fallacies on Twitter/X with Socratic interventions",
-  "permissions": ["storage", "activeTab", "sidePanel"],
+  "permissions": ["storage", "activeTab", "sidePanel", "alarms"],
   "host_permissions": [
     "*://x.com/*",
     "*://twitter.com/*",
     "http://localhost/*",
     "https://localhost/*",
     "http://127.0.0.1/*",
-    "https://127.0.0.1/*"
+    "https://127.0.0.1/*",
+    "https://*.run.app/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.ts",

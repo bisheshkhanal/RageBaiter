@@ -14,6 +14,9 @@ import {
 import { isExtensionActiveOnUrl, type SiteConfiguration } from "../lib/site-config.js";
 import { createRoot } from "react-dom/client";
 import { InterventionPopup, type InterventionLevel } from "../components/InterventionPopup.js";
+import { ErrorBoundary } from "../components/ErrorBoundary.js";
+import interventionPopupStyles from "../components/intervention-popup.css?raw";
+import { logger } from "../lib/logger.js";
 
 const LEGACY_TWEET_SELECTOR = 'article[data-testid="tweet"]';
 const FALLBACK_TWEET_SELECTOR = 'article[role="article"]';
@@ -118,13 +121,37 @@ const isDebugEnvironment = (): boolean => {
   return Boolean(testGlobal.__vitest_worker__ || testGlobal.vitest);
 };
 
-const isLocalBridgeHost = (): boolean => {
-  if (typeof window === "undefined") {
-    return false;
+const VISUALIZER_URL = import.meta.env.VITE_VISUALIZER_URL;
+
+function isValidVisualizerOrigin(origin: string): boolean {
+  const currentOrigin = window.location.origin;
+  const isSameOrigin = origin === currentOrigin;
+  const isLocalhost =
+    origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+  const matchesConfiguredUrl = VISUALIZER_URL && origin === VISUALIZER_URL;
+
+  if (isSameOrigin || isLocalhost || matchesConfiguredUrl) {
+    return true;
   }
 
-  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-};
+  if (!VISUALIZER_URL) {
+    console.warn(
+      "[RageBaiter Extension] VITE_VISUALIZER_URL not set. " +
+        "Bridge will only accept same-origin and localhost messages."
+    );
+  }
+
+  return false;
+}
+
+function isBridgeAllowedOnCurrentPage(): boolean {
+  const configuredUrl = VISUALIZER_URL;
+  const currentOrigin = window.location.origin;
+  const isLocalhost =
+    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+
+  return isLocalhost || (configuredUrl !== undefined && currentOrigin === configuredUrl);
+}
 
 const readBridgeState = async (): Promise<BridgeStatePayload> => {
   if (typeof chrome === "undefined" || !chrome.storage?.local) {
@@ -160,7 +187,7 @@ const postBridgeState = async (
 };
 
 const registerVisualizerBridge = (): { stop: () => void } | null => {
-  if (!isLocalBridgeHost()) {
+  if (!isBridgeAllowedOnCurrentPage()) {
     return null;
   }
 
@@ -174,7 +201,7 @@ const registerVisualizerBridge = (): { stop: () => void } | null => {
   }
 
   const onWindowMessage = (event: MessageEvent<unknown>) => {
-    if (event.source !== window || event.origin !== window.location.origin) {
+    if (event.source !== window || !isValidVisualizerOrigin(event.origin)) {
       return;
     }
 
@@ -226,7 +253,7 @@ const registerVisualizerBridge = (): { stop: () => void } | null => {
 };
 
 const emitSelectorMissTelemetry = (tweetSelectors: string[], reason: string): void => {
-  console.warn("[RageBaiter] Tweet selector miss", {
+  logger.warn("Tweet selector miss", {
     reason,
     selectors: tweetSelectors,
   });
@@ -519,7 +546,7 @@ const sendTweetToServiceWorker = (payload: TweetScrapePayload): void => {
   }
 
   void sendTweetDetected(payload).catch((error) => {
-    console.warn("[RageBaiter] Failed to send TWEET_DETECTED", error);
+    logger.warn("Failed to send TWEET_DETECTED", error);
   });
 };
 
@@ -530,6 +557,36 @@ type AnalysisCardFields = {
   mechanism?: string | undefined;
   dataCheck?: string | undefined;
   socraticChallenge?: string | undefined;
+};
+
+let cachedStyleSheet: CSSStyleSheet | null = null;
+
+const getInterventionStyleSheet = (): CSSStyleSheet => {
+  if (cachedStyleSheet) {
+    return cachedStyleSheet;
+  }
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(interventionPopupStyles);
+  cachedStyleSheet = sheet;
+  return sheet;
+};
+
+const getTwitterColorMode = (): "light" | "dark" => {
+  const htmlElement = document.documentElement;
+  const colorMode = htmlElement.getAttribute("data-color-mode");
+  if (colorMode === "light" || colorMode === "dark") {
+    return colorMode;
+  }
+  const bgColor = window.getComputedStyle(htmlElement).backgroundColor;
+  const rgb = bgColor.match(/\d+/g);
+  if (rgb && rgb.length >= 3) {
+    const r = parseInt(rgb[0] ?? "0", 10);
+    const g = parseInt(rgb[1] ?? "0", 10);
+    const b = parseInt(rgb[2] ?? "0", 10);
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    return brightness > 128 ? "light" : "dark";
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 };
 
 const injectInterventionUI = (
@@ -556,13 +613,23 @@ const injectInterventionUI = (
   tweetElement.style.position = "relative";
   tweetElement.style.background = `${accentColor}08`;
 
-  const container = document.createElement("div");
-  container.className = "ragebaiter-intervention-container";
-  container.style.padding = "8px 0 0";
-  tweetElement.append(container);
+  const shadowHost = document.createElement("div");
+  shadowHost.className = "ragebaiter-intervention-container";
+  shadowHost.style.padding = "8px 0 0";
+  shadowHost.setAttribute("data-level", level);
+  shadowHost.setAttribute("data-color-mode", getTwitterColorMode());
+
+  const shadowRoot = shadowHost.attachShadow({ mode: "open" });
+  const styleSheet = getInterventionStyleSheet();
+  shadowRoot.adoptedStyleSheets = [styleSheet];
+
+  const mountPoint = document.createElement("div");
+  shadowRoot.appendChild(mountPoint);
+
+  tweetElement.append(shadowHost);
   tweetElement.dataset.ragebaiterUi = "true";
 
-  const root = createRoot(container);
+  const root = createRoot(mountPoint);
 
   const safeLevel = (
     ["low", "medium", "high"].includes(level) ? level : "low"
@@ -575,86 +642,88 @@ const injectInterventionUI = (
   };
 
   root.render(
-    <InterventionPopup
-      level={safeLevel}
-      reason={reason}
-      counterArgument={analysisFields?.counterArgument}
-      logicFailure={analysisFields?.logicFailure}
-      claim={analysisFields?.claim}
-      mechanism={analysisFields?.mechanism}
-      dataCheck={analysisFields?.dataCheck}
-      socraticChallenge={analysisFields?.socraticChallenge}
-      onDismiss={() => {
-        if (tweetVector) {
+    <ErrorBoundary fallback={null}>
+      <InterventionPopup
+        level={safeLevel}
+        reason={reason}
+        counterArgument={analysisFields?.counterArgument}
+        logicFailure={analysisFields?.logicFailure}
+        claim={analysisFields?.claim}
+        mechanism={analysisFields?.mechanism}
+        dataCheck={analysisFields?.dataCheck}
+        socraticChallenge={analysisFields?.socraticChallenge}
+        onDismiss={() => {
+          if (tweetVector) {
+            void sendFeedbackSubmitted({
+              tweetId,
+              feedback: "dismissed",
+              tweetVector,
+              timestamp: new Date().toISOString(),
+            }).catch((error) => {
+              logger.warn("Failed to send FEEDBACK_SUBMITTED dismissed", error);
+            });
+          }
+          shadowHost.remove();
+          clearHighlight();
+          tweetElement.dataset.ragebaiterUi = "dismissed";
+        }}
+        onProceed={() => {
+          if (tweetVector) {
+            void sendFeedbackSubmitted({
+              tweetId,
+              feedback: "acknowledged",
+              tweetVector,
+              timestamp: new Date().toISOString(),
+            }).catch((error) => {
+              logger.warn("Failed to send FEEDBACK_SUBMITTED acknowledged", error);
+            });
+          }
+          shadowHost.remove();
+          clearHighlight();
+          tweetElement.dataset.ragebaiterUi = "acknowledged";
+        }}
+        onAgree={() => {
+          if (!tweetVector) {
+            return;
+          }
+
+          void sendFeedbackSubmitted({
+            tweetId,
+            feedback: "agreed",
+            tweetVector,
+            timestamp: new Date().toISOString(),
+          }).catch((error) => {
+            logger.warn("Failed to send FEEDBACK_SUBMITTED agreed", error);
+          });
+
+          tweetElement.dataset.ragebaiterUi = "agreed";
+          setTimeout(() => {
+            shadowHost.remove();
+            clearHighlight();
+          }, 800);
+        }}
+        onDisagree={() => {
+          if (!tweetVector) {
+            return;
+          }
+
           void sendFeedbackSubmitted({
             tweetId,
             feedback: "dismissed",
             tweetVector,
             timestamp: new Date().toISOString(),
           }).catch((error) => {
-            console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED dismissed", error);
+            logger.warn("Failed to send FEEDBACK_SUBMITTED dismissed", error);
           });
-        }
-        container.remove();
-        clearHighlight();
-        tweetElement.dataset.ragebaiterUi = "dismissed";
-      }}
-      onProceed={() => {
-        if (tweetVector) {
-          void sendFeedbackSubmitted({
-            tweetId,
-            feedback: "acknowledged",
-            tweetVector,
-            timestamp: new Date().toISOString(),
-          }).catch((error) => {
-            console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED acknowledged", error);
-          });
-        }
-        container.remove();
-        clearHighlight();
-        tweetElement.dataset.ragebaiterUi = "acknowledged";
-      }}
-      onAgree={() => {
-        if (!tweetVector) {
-          return;
-        }
 
-        void sendFeedbackSubmitted({
-          tweetId,
-          feedback: "agreed",
-          tweetVector,
-          timestamp: new Date().toISOString(),
-        }).catch((error) => {
-          console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED agreed", error);
-        });
-
-        tweetElement.dataset.ragebaiterUi = "agreed";
-        setTimeout(() => {
-          container.remove();
-          clearHighlight();
-        }, 800);
-      }}
-      onDisagree={() => {
-        if (!tweetVector) {
-          return;
-        }
-
-        void sendFeedbackSubmitted({
-          tweetId,
-          feedback: "dismissed",
-          tweetVector,
-          timestamp: new Date().toISOString(),
-        }).catch((error) => {
-          console.warn("[RageBaiter] Failed to send FEEDBACK_SUBMITTED dismissed", error);
-        });
-
-        tweetElement.dataset.ragebaiterUi = "dismissed";
-        setTimeout(() => {
-          container.remove();
-          clearHighlight();
-        }, 800);
-      }}
-    />
+          tweetElement.dataset.ragebaiterUi = "dismissed";
+          setTimeout(() => {
+            shadowHost.remove();
+            clearHighlight();
+          }, 800);
+        }}
+      />
+    </ErrorBoundary>
   );
 };
 

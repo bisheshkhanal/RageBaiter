@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RageBaiter - InterventionPopup Fixture</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: #06060f;
+        color: #e2e8f0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          Helvetica,
+          Arial,
+          "Apple Color Emoji",
+          "Segoe UI Emoji";
+      }
+
+      .page {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 18px 18px 40px;
+      }
+
+      .page-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 14px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 14px;
+        background:
+          radial-gradient(1200px 450px at 10% 0%, rgba(99, 102, 241, 0.16), transparent 55%),
+          radial-gradient(900px 360px at 100% 0%, rgba(245, 158, 11, 0.12), transparent 55%),
+          rgba(2, 6, 23, 0.55);
+        backdrop-filter: blur(6px);
+      }
+
+      .page-title {
+        font-size: 16px;
+        font-weight: 750;
+        letter-spacing: 0.2px;
+      }
+
+      .page-subtitle {
+        margin-top: 4px;
+        color: rgba(148, 163, 184, 0.9);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .page-hint {
+        font-size: 12px;
+        color: rgba(148, 163, 184, 0.9);
+        text-align: right;
+        line-height: 1.35;
+      }
+
+      .grid {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      @media (max-width: 1100px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 740px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .page-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .page-hint {
+          text-align: left;
+        }
+      }
+
+      .panel {
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 14px;
+        background: rgba(2, 6, 23, 0.55);
+        overflow: hidden;
+      }
+
+      .panel-header {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+        background: linear-gradient(135deg, rgba(148, 163, 184, 0.12), transparent);
+      }
+
+      .panel-title {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: rgba(226, 232, 240, 0.92);
+      }
+
+      .panel-subtitle {
+        margin-top: 4px;
+        font-size: 11px;
+        color: rgba(148, 163, 184, 0.9);
+      }
+
+      .panel-body {
+        padding: 12px;
+      }
+
+      .tweet {
+        border-radius: 16px;
+        background: #0b1220;
+        border: 1px solid rgba(51, 65, 85, 0.75);
+        padding: 12px;
+      }
+
+      .tweet-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .tweet-author {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: radial-gradient(
+          circle at 30% 20%,
+          rgba(56, 189, 248, 0.95),
+          rgba(99, 102, 241, 0.85)
+        );
+        border: 1px solid rgba(148, 163, 184, 0.18);
+      }
+
+      .author-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .author-name {
+        font-size: 12px;
+        font-weight: 750;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .author-handle {
+        margin-top: 1px;
+        font-size: 11px;
+        color: rgba(148, 163, 184, 0.9);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .tweet-time {
+        font-size: 11px;
+        color: rgba(148, 163, 184, 0.85);
+        white-space: nowrap;
+      }
+
+      .tweet-text {
+        font-size: 13px;
+        line-height: 1.55;
+        color: rgba(226, 232, 240, 0.95);
+      }
+
+      .tweet-meta {
+        margin-top: 10px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: rgba(2, 6, 23, 0.55);
+        border: 1px solid rgba(51, 65, 85, 0.65);
+        font-size: 11px;
+        color: rgba(148, 163, 184, 0.95);
+        line-height: 1.45;
+      }
+
+      .tweet-meta code {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+          monospace;
+        font-size: 11px;
+        color: rgba(226, 232, 240, 0.9);
+      }
+
+      .dismissed-pill {
+        margin-top: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(51, 65, 85, 0.85);
+        background: rgba(2, 6, 23, 0.55);
+        color: rgba(148, 163, 184, 0.95);
+        font-size: 11px;
+      }
+
+      .dismissed-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.75);
+      }
+
+      /*
+        Popup styles (copied/adapted from extension/src/components/intervention-popup.css)
+
+        The extension version is scoped via Shadow DOM and uses :host. For this static fixture,
+        we move CSS custom properties onto .rb-popup so each panel can set a different data-level.
+      */
+      .rb-popup {
+        --rb-accent-color: #f59e0b;
+        --rb-accent-color-40: #f59e0b40;
+        --rb-accent-color-30: #f59e0b30;
+        --rb-accent-color-20: #f59e0b20;
+        --rb-accent-color-15: #f59e0b15;
+        --rb-accent-color-60: #f59e0b60;
+
+        --rb-bg-primary: #1a1a2e;
+        --rb-bg-secondary: #0f172a;
+        --rb-text-primary: #e2e8f0;
+        --rb-text-secondary: #94a3b8;
+        --rb-text-tertiary: #64748b;
+        --rb-text-muted: #475569;
+        --rb-text-claim: #cbd5e1;
+        --rb-border-primary: #334155;
+
+        --rb-green-primary: #065f46;
+        --rb-green-secondary: #064e3b;
+        --rb-green-text: #6ee7b7;
+
+        --rb-red-primary: #991b1b;
+        --rb-red-secondary: #7f1d1d;
+        --rb-red-text: #fca5a5;
+
+        --rb-blue-text: #60a5fa;
+        --rb-emerald-text: #34d399;
+        --rb-violet-text: #a78bfa;
+
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--rb-bg-primary);
+        border-radius: 12px;
+        border: 1px solid var(--rb-accent-color-40);
+        box-shadow:
+          0 4px 24px rgba(0, 0, 0, 0.5),
+          0 0 0 1px var(--rb-accent-color-20);
+        color: var(--rb-text-primary);
+        margin-top: 12px;
+        overflow: hidden;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .rb-popup[data-level="high"] {
+        --rb-accent-color: #ef4444;
+        --rb-accent-color-40: #ef444440;
+        --rb-accent-color-30: #ef444430;
+        --rb-accent-color-20: #ef444420;
+        --rb-accent-color-15: #ef444415;
+        --rb-accent-color-60: #ef444460;
+      }
+
+      .rb-popup[data-level="medium"],
+      .rb-popup[data-level="low"] {
+        --rb-accent-color: #f59e0b;
+        --rb-accent-color-40: #f59e0b40;
+        --rb-accent-color-30: #f59e0b30;
+        --rb-accent-color-20: #f59e0b20;
+        --rb-accent-color-15: #f59e0b15;
+        --rb-accent-color-60: #f59e0b60;
+      }
+
+      .rb-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid var(--rb-accent-color-30);
+        background: linear-gradient(135deg, var(--rb-accent-color-15), transparent);
+      }
+
+      .rb-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .rb-warning-icon {
+        font-size: 20px;
+      }
+
+      .rb-header-text {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .rb-section-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 4px;
+      }
+
+      .rb-header-label {
+        color: var(--rb-accent-color);
+        letter-spacing: 1.2px;
+        margin-bottom: 2px;
+      }
+
+      .rb-header-subtitle {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--rb-text-secondary);
+      }
+
+      .rb-dismiss-btn {
+        background: none;
+        border: none;
+        color: var(--rb-text-tertiary);
+        cursor: pointer;
+        font-size: 18px;
+        padding: 4px;
+        line-height: 1;
+      }
+
+      .rb-dismiss-btn:hover {
+        color: var(--rb-text-secondary);
+      }
+
+      .rb-body {
+        padding: 14px 16px;
+      }
+
+      .rb-claim-section {
+        margin-bottom: 14px;
+      }
+
+      .rb-claim-label {
+        color: var(--rb-accent-color);
+      }
+
+      .rb-claim-text {
+        font-size: 13px;
+        color: var(--rb-text-claim);
+        line-height: 1.55;
+        font-style: italic;
+        border-left: 3px solid var(--rb-accent-color-60);
+        padding-left: 10px;
+      }
+
+      .rb-mechanism-section {
+        margin-bottom: 14px;
+      }
+
+      .rb-mechanism-label {
+        color: var(--rb-blue-text);
+      }
+
+      .rb-body-text {
+        font-size: 13px;
+        color: var(--rb-text-secondary);
+        line-height: 1.55;
+      }
+
+      .rb-datacheck-section {
+        margin-bottom: 14px;
+      }
+
+      .rb-datacheck-label {
+        color: var(--rb-emerald-text);
+      }
+
+      .rb-socratic-section {
+        margin-bottom: 16px;
+        background: var(--rb-bg-secondary);
+        border-radius: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--rb-border-primary);
+      }
+
+      .rb-socratic-label {
+        color: var(--rb-violet-text);
+      }
+
+      .rb-socratic-text {
+        font-size: 13px;
+        line-height: 1.55;
+        font-style: italic;
+        color: var(--rb-text-primary);
+      }
+
+      .rb-impact-section {
+        border-top: 1px solid var(--rb-border-primary);
+        padding-top: 12px;
+      }
+
+      .rb-impact-label {
+        color: var(--rb-text-tertiary);
+        margin-bottom: 8px;
+      }
+
+      .rb-button-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .rb-agree-btn {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 16px;
+        border-radius: 6px;
+        border: 1px solid var(--rb-green-primary);
+        background: var(--rb-green-secondary);
+        color: var(--rb-green-text);
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .rb-agree-btn:hover:not(:disabled) {
+        background: var(--rb-green-primary);
+      }
+
+      .rb-agree-btn:disabled {
+        cursor: not-allowed;
+      }
+
+      .rb-agree-btn.rb-active {
+        background: var(--rb-green-primary);
+      }
+
+      .rb-agree-btn.rb-inactive {
+        opacity: 0.4;
+      }
+
+      .rb-disagree-btn {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 16px;
+        border-radius: 6px;
+        border: 1px solid var(--rb-red-primary);
+        background: var(--rb-red-secondary);
+        color: var(--rb-red-text);
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .rb-disagree-btn:hover:not(:disabled) {
+        background: var(--rb-red-primary);
+      }
+
+      .rb-disagree-btn:disabled {
+        cursor: not-allowed;
+      }
+
+      .rb-disagree-btn.rb-active {
+        background: var(--rb-red-primary);
+      }
+
+      .rb-disagree-btn.rb-inactive {
+        opacity: 0.4;
+      }
+
+      .rb-proceed-btn {
+        font-size: 12px;
+        font-weight: 500;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--rb-border-primary);
+        background: transparent;
+        color: var(--rb-text-tertiary);
+        cursor: pointer;
+        margin-left: auto;
+        transition: all 0.15s;
+      }
+
+      .rb-proceed-btn:hover {
+        background: var(--rb-border-primary);
+        color: var(--rb-text-secondary);
+      }
+
+      .rb-feedback-message {
+        font-size: 11px;
+        margin-top: 8px;
+      }
+
+      .rb-feedback-success {
+        color: var(--rb-emerald-text);
+      }
+
+      .rb-feedback-info {
+        color: var(--rb-text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="page-header">
+        <div>
+          <div class="page-title">InterventionPopup Visual Fixture</div>
+          <div class="page-subtitle">
+            Standalone HTML fixture for reviewing all InterventionPopup states without building the
+            extension.
+          </div>
+        </div>
+        <div class="page-hint">
+          Open this file in any browser.<br />
+          Use built-in screenshots for baselines.
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel" id="low-pre">
+          <div class="panel-header">
+            <div class="panel-title">1) Low severity (level 1) - pre-feedback</div>
+            <div class="panel-subtitle">data-level=low, feedbackState=idle</div>
+          </div>
+          <div class="panel-body">
+            <article class="tweet">
+              <div class="tweet-top">
+                <div class="tweet-author">
+                  <div class="avatar" aria-hidden="true"></div>
+                  <div class="author-text">
+                    <div class="author-name">Alex Rivers</div>
+                    <div class="author-handle">@arivers</div>
+                  </div>
+                </div>
+                <div class="tweet-time">9:41 AM</div>
+              </div>
+              <div class="tweet-text">
+                The climate bill is being framed as "job-killing" again. Notice how the debate gets
+                reduced to one scary headline.
+              </div>
+              <div class="tweet-meta">
+                Topic: <code>Climate Policy</code><br />
+                Fallacies: <code>False Dilemma</code>, <code>Loaded Language</code><br />
+                Vector: <code>social=-0.62</code>, <code>economic=0.31</code>,
+                <code>populist=0.71</code> | Confidence:
+                <code>0.86</code>
+              </div>
+
+              <div class="rb-popup" role="alert" data-testid="intervention-popup" data-level="low">
+                <div class="rb-header">
+                  <div class="rb-header-left">
+                    <span class="rb-warning-icon" role="img" aria-label="warning"
+                      >&#x26A0;&#xFE0F;</span
+                    >
+                    <div class="rb-header-text">
+                      <div class="rb-section-label rb-header-label">
+                        Logic Failure: False Dilemma
+                      </div>
+                      <div class="rb-header-subtitle">RageBaiter Analysis</div>
+                    </div>
+                  </div>
+                  <button class="rb-dismiss-btn" aria-label="Dismiss">&#x2715;</button>
+                </div>
+
+                <div class="rb-body">
+                  <div class="rb-claim-section">
+                    <div class="rb-section-label rb-claim-label">The Claim</div>
+                    <div class="rb-claim-text">
+                      &ldquo;This bill can only be a disaster for working families.&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-mechanism-section">
+                    <div class="rb-section-label rb-mechanism-label">The Mechanism</div>
+                    <div class="rb-body-text">
+                      The post collapses a complex policy tradeoff into a binary outcome and primes
+                      your attention toward threat framing.
+                    </div>
+                  </div>
+
+                  <div class="rb-datacheck-section">
+                    <div class="rb-section-label rb-datacheck-label">The Data Check</div>
+                    <div class="rb-body-text">
+                      Compare independent projections across multiple time horizons (short-term
+                      sector impacts vs long-term costs of inaction).
+                    </div>
+                  </div>
+
+                  <div class="rb-socratic-section">
+                    <div class="rb-section-label rb-socratic-label">Socratic Challenge</div>
+                    <div class="rb-socratic-text">
+                      &ldquo;If the opposite were true, what evidence would you expect to see in
+                      credible labor and energy datasets?&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-impact-section">
+                    <div class="rb-section-label rb-impact-label">Impact</div>
+                    <div class="rb-button-row">
+                      <button class="rb-agree-btn" data-testid="feedback-agree-button">
+                        Agree
+                      </button>
+                      <button class="rb-disagree-btn" data-testid="feedback-dismiss-button">
+                        Disagree
+                      </button>
+                      <button class="rb-proceed-btn">Dismiss</button>
+                    </div>
+                    <div class="rb-feedback-message rb-feedback-info">
+                      Agree/Disagree updates your political compass vector.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="medium-pre">
+          <div class="panel-header">
+            <div class="panel-title">2) Medium severity (level 2) - pre-feedback</div>
+            <div class="panel-subtitle">data-level=medium, feedbackState=idle</div>
+          </div>
+          <div class="panel-body">
+            <article class="tweet">
+              <div class="tweet-top">
+                <div class="tweet-author">
+                  <div class="avatar" aria-hidden="true"></div>
+                  <div class="author-text">
+                    <div class="author-name">Mina Park</div>
+                    <div class="author-handle">@minap</div>
+                  </div>
+                </div>
+                <div class="tweet-time">10:12 AM</div>
+              </div>
+              <div class="tweet-text">
+                Immigration policy threads are getting spicy again. People keep substituting a
+                single viral story for the whole dataset.
+              </div>
+              <div class="tweet-meta">
+                Topic: <code>Immigration Policy</code><br />
+                Fallacies: <code>Hasty Generalization</code>, <code>Anecdotal Evidence</code><br />
+                Vector: <code>social=0.18</code>, <code>economic=-0.41</code>,
+                <code>populist=0.22</code> | Confidence:
+                <code>0.74</code>
+              </div>
+
+              <div
+                class="rb-popup"
+                role="alert"
+                data-testid="intervention-popup"
+                data-level="medium"
+              >
+                <div class="rb-header">
+                  <div class="rb-header-left">
+                    <span class="rb-warning-icon" role="img" aria-label="warning"
+                      >&#x26A0;&#xFE0F;</span
+                    >
+                    <div class="rb-header-text">
+                      <div class="rb-section-label rb-header-label">
+                        Logic Failure: Hasty Generalization
+                      </div>
+                      <div class="rb-header-subtitle">RageBaiter Analysis</div>
+                    </div>
+                  </div>
+                  <button class="rb-dismiss-btn" aria-label="Dismiss">&#x2715;</button>
+                </div>
+
+                <div class="rb-body">
+                  <div class="rb-claim-section">
+                    <div class="rb-section-label rb-claim-label">The Claim</div>
+                    <div class="rb-claim-text">
+                      &ldquo;This one incident proves the entire system is out of control.&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-mechanism-section">
+                    <div class="rb-section-label rb-mechanism-label">The Mechanism</div>
+                    <div class="rb-body-text">
+                      A vivid anecdote is used as a shortcut for statistical context, making the
+                      most emotionally salient example feel representative.
+                    </div>
+                  </div>
+
+                  <div class="rb-datacheck-section">
+                    <div class="rb-section-label rb-datacheck-label">The Data Check</div>
+                    <div class="rb-body-text">
+                      Look for base rates, time trends, and comparable countries before drawing
+                      conclusions.
+                    </div>
+                  </div>
+
+                  <div class="rb-socratic-section">
+                    <div class="rb-section-label rb-socratic-label">Socratic Challenge</div>
+                    <div class="rb-socratic-text">
+                      &ldquo;What would a fair counterexample look like, and how common is it
+                      compared with the story being amplified?&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-impact-section">
+                    <div class="rb-section-label rb-impact-label">Impact</div>
+                    <div class="rb-button-row">
+                      <button class="rb-agree-btn" data-testid="feedback-agree-button">
+                        Agree
+                      </button>
+                      <button class="rb-disagree-btn" data-testid="feedback-dismiss-button">
+                        Disagree
+                      </button>
+                      <button class="rb-proceed-btn">Dismiss</button>
+                    </div>
+                    <div class="rb-feedback-message rb-feedback-info">
+                      Agree/Disagree updates your political compass vector.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="high-pre">
+          <div class="panel-header">
+            <div class="panel-title">3) High severity (level 3) - pre-feedback</div>
+            <div class="panel-subtitle">data-level=high, feedbackState=idle</div>
+          </div>
+          <div class="panel-body">
+            <article class="tweet">
+              <div class="tweet-top">
+                <div class="tweet-author">
+                  <div class="avatar" aria-hidden="true"></div>
+                  <div class="author-text">
+                    <div class="author-name">Jordan Wells</div>
+                    <div class="author-handle">@jwells</div>
+                  </div>
+                </div>
+                <div class="tweet-time">10:37 AM</div>
+              </div>
+              <div class="tweet-text">
+                If you disagree with my party you literally want the country to collapse. Stop
+                pretending you care about people.
+              </div>
+              <div class="tweet-meta">
+                Topic: <code>Election Integrity</code><br />
+                Fallacies: <code>Ad Hominem</code>, <code>Strawman</code>, <code>Whataboutism</code
+                ><br />
+                Vector: <code>social=0.77</code>, <code>economic=0.68</code>,
+                <code>populist=-0.12</code> | Confidence:
+                <code>0.91</code>
+              </div>
+
+              <div class="rb-popup" role="alert" data-testid="intervention-popup" data-level="high">
+                <div class="rb-header">
+                  <div class="rb-header-left">
+                    <span class="rb-warning-icon" role="img" aria-label="warning"
+                      >&#x26A0;&#xFE0F;</span
+                    >
+                    <div class="rb-header-text">
+                      <div class="rb-section-label rb-header-label">Logic Failure: Ad Hominem</div>
+                      <div class="rb-header-subtitle">RageBaiter Analysis</div>
+                    </div>
+                  </div>
+                  <button class="rb-dismiss-btn" aria-label="Dismiss">&#x2715;</button>
+                </div>
+
+                <div class="rb-body">
+                  <div class="rb-claim-section">
+                    <div class="rb-section-label rb-claim-label">The Claim</div>
+                    <div class="rb-claim-text">
+                      &ldquo;Anyone who disagrees is evil and wants the country to collapse.&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-mechanism-section">
+                    <div class="rb-section-label rb-mechanism-label">The Mechanism</div>
+                    <div class="rb-body-text">
+                      The post attacks motives/character instead of addressing the substance,
+                      encouraging tribal outrage over evaluation of evidence.
+                    </div>
+                  </div>
+
+                  <div class="rb-datacheck-section">
+                    <div class="rb-section-label rb-datacheck-label">The Data Check</div>
+                    <div class="rb-body-text">
+                      Separate claims about policy outcomes from claims about intent. Ask: what
+                      would we need to measure to decide who's correct?
+                    </div>
+                  </div>
+
+                  <div class="rb-socratic-section">
+                    <div class="rb-section-label rb-socratic-label">Socratic Challenge</div>
+                    <div class="rb-socratic-text">
+                      &ldquo;What is the strongest non-evil interpretation of the other side's
+                      position that still respects the facts?&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-impact-section">
+                    <div class="rb-section-label rb-impact-label">Impact</div>
+                    <div class="rb-button-row">
+                      <button class="rb-agree-btn" data-testid="feedback-agree-button">
+                        Agree
+                      </button>
+                      <button class="rb-disagree-btn" data-testid="feedback-dismiss-button">
+                        Disagree
+                      </button>
+                      <button class="rb-proceed-btn">Dismiss</button>
+                    </div>
+                    <div class="rb-feedback-message rb-feedback-info">
+                      Agree/Disagree updates your political compass vector.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="post-agree">
+          <div class="panel-header">
+            <div class="panel-title">4) Post-agree state</div>
+            <div class="panel-subtitle">feedbackState=agreed (buttons disabled, agree active)</div>
+          </div>
+          <div class="panel-body">
+            <article class="tweet">
+              <div class="tweet-top">
+                <div class="tweet-author">
+                  <div class="avatar" aria-hidden="true"></div>
+                  <div class="author-text">
+                    <div class="author-name">Sam Patel</div>
+                    <div class="author-handle">@samp</div>
+                  </div>
+                </div>
+                <div class="tweet-time">11:03 AM</div>
+              </div>
+              <div class="tweet-text">
+                I used to share posts like this without checking. The framing makes it feel obvious,
+                but it isn't.
+              </div>
+              <div class="tweet-meta">
+                Topic: <code>Healthcare Costs</code><br />
+                Fallacies: <code>Cherry Picking</code><br />
+                Vector: <code>social=-0.12</code>, <code>economic=-0.66</code>,
+                <code>populist=0.08</code> | Confidence:
+                <code>0.69</code>
+              </div>
+
+              <div
+                class="rb-popup"
+                role="alert"
+                data-testid="intervention-popup"
+                data-level="medium"
+              >
+                <div class="rb-header">
+                  <div class="rb-header-left">
+                    <span class="rb-warning-icon" role="img" aria-label="warning"
+                      >&#x26A0;&#xFE0F;</span
+                    >
+                    <div class="rb-header-text">
+                      <div class="rb-section-label rb-header-label">
+                        Logic Failure: Cherry Picking
+                      </div>
+                      <div class="rb-header-subtitle">RageBaiter Analysis</div>
+                    </div>
+                  </div>
+                  <button class="rb-dismiss-btn" aria-label="Dismiss">&#x2715;</button>
+                </div>
+
+                <div class="rb-body">
+                  <div class="rb-claim-section">
+                    <div class="rb-section-label rb-claim-label">The Claim</div>
+                    <div class="rb-claim-text">
+                      &ldquo;One carefully selected statistic proves the whole healthcare system is
+                      a scam.&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-mechanism-section">
+                    <div class="rb-section-label rb-mechanism-label">The Mechanism</div>
+                    <div class="rb-body-text">
+                      The post highlights a single metric while ignoring nearby context, creating a
+                      confident narrative from incomplete evidence.
+                    </div>
+                  </div>
+
+                  <div class="rb-datacheck-section">
+                    <div class="rb-section-label rb-datacheck-label">The Data Check</div>
+                    <div class="rb-body-text">
+                      Check whether the metric is representative, and compare against multiple
+                      measures (outcomes, access, spending, and distribution).
+                    </div>
+                  </div>
+
+                  <div class="rb-socratic-section">
+                    <div class="rb-section-label rb-socratic-label">Socratic Challenge</div>
+                    <div class="rb-socratic-text">
+                      &ldquo;If you had to argue the opposite with integrity, what data would you
+                      present first?&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-impact-section">
+                    <div class="rb-section-label rb-impact-label">Impact</div>
+                    <div class="rb-button-row">
+                      <button
+                        class="rb-agree-btn rb-active"
+                        disabled
+                        data-testid="feedback-agree-button"
+                      >
+                        Agreed &#x2713;
+                      </button>
+                      <button
+                        class="rb-disagree-btn rb-inactive"
+                        disabled
+                        data-testid="feedback-dismiss-button"
+                      >
+                        Disagree
+                      </button>
+                      <button class="rb-proceed-btn">Dismiss</button>
+                    </div>
+                    <div class="rb-feedback-message rb-feedback-success">
+                      Your political vector has been updated.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="post-disagree">
+          <div class="panel-header">
+            <div class="panel-title">5) Post-disagree state</div>
+            <div class="panel-subtitle">
+              feedbackState=disagreed (buttons disabled, disagree active)
+            </div>
+          </div>
+          <div class="panel-body">
+            <article class="tweet">
+              <div class="tweet-top">
+                <div class="tweet-author">
+                  <div class="avatar" aria-hidden="true"></div>
+                  <div class="author-text">
+                    <div class="author-name">Casey Nguyen</div>
+                    <div class="author-handle">@caseyn</div>
+                  </div>
+                </div>
+                <div class="tweet-time">11:28 AM</div>
+              </div>
+              <div class="tweet-text">
+                People keep calling any disagreement "propaganda." Sometimes it's just a genuine
+                difference in priorities.
+              </div>
+              <div class="tweet-meta">
+                Topic: <code>Education Funding</code><br />
+                Fallacies: <code>Manipulative Framing</code><br />
+                Vector: <code>social=0.05</code>, <code>economic=0.22</code>,
+                <code>populist=-0.19</code> | Confidence:
+                <code>0.62</code>
+              </div>
+
+              <div
+                class="rb-popup"
+                role="alert"
+                data-testid="intervention-popup"
+                data-level="medium"
+              >
+                <div class="rb-header">
+                  <div class="rb-header-left">
+                    <span class="rb-warning-icon" role="img" aria-label="warning"
+                      >&#x26A0;&#xFE0F;</span
+                    >
+                    <div class="rb-header-text">
+                      <div class="rb-section-label rb-header-label">
+                        Logic Failure: Manipulative Framing
+                      </div>
+                      <div class="rb-header-subtitle">RageBaiter Analysis</div>
+                    </div>
+                  </div>
+                  <button class="rb-dismiss-btn" aria-label="Dismiss">&#x2715;</button>
+                </div>
+
+                <div class="rb-body">
+                  <div class="rb-claim-section">
+                    <div class="rb-section-label rb-claim-label">The Claim</div>
+                    <div class="rb-claim-text">
+                      &ldquo;Only bad people could oppose this. Anyone who does is lying.&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-mechanism-section">
+                    <div class="rb-section-label rb-mechanism-label">The Mechanism</div>
+                    <div class="rb-body-text">
+                      It pressures you into choosing a moral identity instead of evaluating the
+                      policy details, narrowing the space for nuance.
+                    </div>
+                  </div>
+
+                  <div class="rb-datacheck-section">
+                    <div class="rb-section-label rb-datacheck-label">The Data Check</div>
+                    <div class="rb-body-text">
+                      Ask what the strongest evidence is on both sides, and what constraints might
+                      create tradeoffs.
+                    </div>
+                  </div>
+
+                  <div class="rb-socratic-section">
+                    <div class="rb-section-label rb-socratic-label">Socratic Challenge</div>
+                    <div class="rb-socratic-text">
+                      &ldquo;Can you restate the opposing view in a way they would recognize as
+                      fair, before disagreeing?&rdquo;
+                    </div>
+                  </div>
+
+                  <div class="rb-impact-section">
+                    <div class="rb-section-label rb-impact-label">Impact</div>
+                    <div class="rb-button-row">
+                      <button
+                        class="rb-agree-btn rb-inactive"
+                        disabled
+                        data-testid="feedback-agree-button"
+                      >
+                        Agree
+                      </button>
+                      <button
+                        class="rb-disagree-btn rb-active"
+                        disabled
+                        data-testid="feedback-dismiss-button"
+                      >
+                        Disagreed &#x2713;
+                      </button>
+                      <button class="rb-proceed-btn">Dismiss</button>
+                    </div>
+                    <div class="rb-feedback-message rb-feedback-success">
+                      Your political vector has been updated.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="post-dismiss">
+          <div class="panel-header">
+            <div class="panel-title">6) Post-dismiss state</div>
+            <div class="panel-subtitle">represents popup removed after user clicks Dismiss</div>
+          </div>
+          <div class="panel-body">
+            <article class="tweet">
+              <div class="tweet-top">
+                <div class="tweet-author">
+                  <div class="avatar" aria-hidden="true"></div>
+                  <div class="author-text">
+                    <div class="author-name">Taylor Chen</div>
+                    <div class="author-handle">@tchen</div>
+                  </div>
+                </div>
+                <div class="tweet-time">11:54 AM</div>
+              </div>
+              <div class="tweet-text">
+                Threads about "free speech" always get weird fast. People talk past each other
+                because definitions keep shifting.
+              </div>
+              <div class="tweet-meta">
+                Topic: <code>Platform Moderation</code><br />
+                Fallacies: <code>Equivocation</code>, <code>Motte-and-Bailey</code><br />
+                Vector: <code>social=0.33</code>, <code>economic=0.09</code>,
+                <code>populist=0.55</code> | Confidence:
+                <code>0.71</code>
+              </div>
+
+              <div class="dismissed-pill" aria-label="dismissed-state">
+                <span class="dismissed-dot" aria-hidden="true"></span>
+                Intervention dismissed
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

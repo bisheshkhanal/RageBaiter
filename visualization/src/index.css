@@ -6,19 +6,24 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: #06060f;
   color: #e2e8f0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: 0.01em;
 }
 
-/* Glassmorphic panel */
 .glass {
   background: rgba(15, 15, 30, 0.7);
   backdrop-filter: blur(16px);
@@ -27,21 +32,56 @@ html, body, #root {
   border-radius: 16px;
 }
 
-/* Rage score bar gradient */
 .rage-gradient {
   background: linear-gradient(90deg, #22c55e 0%, #eab308 50%, #ef4444 100%);
 }
 
-/* Mono font override */
 .font-mono {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* Hide scrollbar but keep scroll */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+@media (max-width: 767px) {
+  .panel-sidebar {
+    position: absolute;
+    top: 60px;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    padding-right: 0;
+  }
+
+  .panel-sidebar > * {
+    width: 100% !important;
+    min-width: auto !important;
+  }
+
+  .header-actions {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    justify-content: flex-end;
+  }
+
+  .header-actions > * {
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .panel-sidebar {
+    max-width: 280px;
+  }
+
+  .panel-sidebar > * {
+    width: 260px !important;
+  }
 }

@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import type { Context } from "hono";
 
 type EnvShape = {
   process?: {
@@ -18,12 +19,18 @@ const readEnv = (key: string): string | undefined => {
   return (globalThis as EnvShape).process?.env?.[key];
 };
 
-const getRateLimitKey = (headers: Headers): string => {
-  const authHeader = headers.get("authorization");
-  const apiKey = headers.get("x-api-key");
-  const forwardedFor = headers.get("x-forwarded-for");
+const getRateLimitKey = (c: Context): string => {
+  // Key by auth_id from context when available (set by auth middleware)
+  const authId = c.get("authId");
+  if (authId) {
+    return `auth:${authId}`;
+  }
 
-  return authHeader ?? apiKey ?? forwardedFor ?? "anonymous";
+  // Fall back to IP-based limiting
+  const forwardedFor = c.req.raw.headers.get("x-forwarded-for");
+  const apiKey = c.req.raw.headers.get("x-api-key");
+
+  return `ip:${forwardedFor ?? apiKey ?? "anonymous"}`;
 };
 
 const getLimit = (): number => {
@@ -49,15 +56,20 @@ const isLocalhostRequest = (headers: Headers): boolean => {
   );
 };
 
+const isDevelopment = (): boolean => {
+  return readEnv("NODE_ENV") !== "production";
+};
+
 export const rateLimitMiddleware: MiddlewareHandler = async (c, next) => {
-  if (c.req.path === "/api/analyze" && isLocalhostRequest(c.req.raw.headers)) {
+  // Localhost bypass only in development
+  if (isDevelopment() && c.req.path === "/api/analyze" && isLocalhostRequest(c.req.raw.headers)) {
     await next();
     return;
   }
 
   const now = Date.now();
   const limit = getLimit();
-  const key = getRateLimitKey(c.req.raw.headers);
+  const key = getRateLimitKey(c);
   const existing = requestCounts.get(key);
 
   if (!existing || now >= existing.resetAt) {
