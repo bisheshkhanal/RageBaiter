@@ -7,7 +7,13 @@ import {
 } from "../messaging/protocol.js";
 import { sendInterventionTriggerToTab } from "../messaging/runtime.js";
 import { createDecisionEngine, type TweetAnalysis, type UserProfile } from "./decision-engine.js";
-import { storeLlmConfig, clearLegacyLlmStorageKeys } from "../lib/llm-config.js";
+import {
+  storeLlmConfig,
+  clearLlmCredentials,
+  clearLegacyLlmStorageKeys,
+  setLlmConnectionStatus,
+  type LlmConnectionStatus,
+} from "../lib/llm-config.js";
 import { siteConfigStorage, initializeSiteConfig } from "../lib/site-storage.js";
 import {
   isExtensionActiveOnUrl,
@@ -677,22 +683,95 @@ const routeMessage = async (
     case MESSAGE_TYPES.LLM_CONFIG_UPDATED: {
       void logger.info("LLM config updated", message.payload.provider);
       await storeLlmConfig({
-        provider: "internal",
+        provider: message.payload.provider,
+        model: message.payload.model,
+        apiKey: message.payload.apiKey,
+        customBaseUrl: message.payload.customBaseUrl,
+        useFallback: message.payload.useFallback,
       });
       return ok();
     }
 
     case MESSAGE_TYPES.LLM_CONNECTION_TEST: {
-      void logger.info("LLM connection test ignored (internal only)");
-      return {
-        ok: true,
-        payload: { success: true, message: "Internal API is always available", latencyMs: 0 },
-      };
+      void logger.info("LLM connection test", message.payload.provider);
+      const { provider, apiKey, customBaseUrl } = message.payload;
+      const start = Date.now();
+      try {
+        if (provider === "internal") {
+          return {
+            ok: true,
+            payload: { success: true, message: "Internal API is always available", latencyMs: 0 },
+          };
+        }
+        if (provider === "custom") {
+          if (!customBaseUrl) {
+            return {
+              ok: true,
+              payload: { success: false, message: "Custom base URL is required", latencyMs: 0 },
+            };
+          }
+        }
+        const baseUrlMap: Record<string, string> = {
+          openai: "https://api.openai.com/v1",
+          anthropic: "https://api.anthropic.com/v1",
+          perplexity: "https://api.perplexity.ai/v1",
+          google: "https://generativelanguage.googleapis.com/v1",
+        };
+        const baseUrl = provider === "custom" ? customBaseUrl! : (baseUrlMap[provider] ?? "");
+        const response = await fetch(`${baseUrl}/models`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${apiKey ?? ""}` },
+        });
+        const latencyMs = Date.now() - start;
+        if (!response.ok) {
+          let errorMessage = `HTTP ${response.status}`;
+          try {
+            const body = (await response.json()) as { error?: { message?: string } };
+            if (body?.error?.message) errorMessage = body.error.message;
+          } catch {
+            // ignore parse failure
+          }
+          const connectionStatus: LlmConnectionStatus = {
+            status: "failed",
+            message: errorMessage,
+            lastTested: new Date(),
+          };
+          await setLlmConnectionStatus(connectionStatus);
+          return {
+            ok: true,
+            payload: { success: false, message: errorMessage, latencyMs },
+          };
+        }
+        const successStatus: LlmConnectionStatus = {
+          status: "connected",
+          message: "Successfully connected",
+          lastTested: new Date(),
+        };
+        await setLlmConnectionStatus(successStatus);
+        return {
+          ok: true,
+          payload: { success: true, message: "Successfully connected", latencyMs },
+        };
+      } catch (err) {
+        const latencyMs = Date.now() - start;
+        const errorMessage = err instanceof Error ? err.message : "Connection failed";
+        return {
+          ok: true,
+          payload: { success: false, message: errorMessage, latencyMs },
+        };
+      }
     }
 
     case MESSAGE_TYPES.LLM_CREDENTIALS_CLEARED: {
       void logger.info("LLM credentials cleared");
-      await clearLegacyLlmStorageKeys();
+      await clearLlmCredentials();
+      await storeLlmConfig({
+        provider: "internal",
+        model: "",
+        apiKey: undefined,
+        customBaseUrl: undefined,
+        useFallback: true,
+      });
       return ok();
     }
 

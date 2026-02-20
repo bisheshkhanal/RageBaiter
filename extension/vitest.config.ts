@@ -8,10 +8,10 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["tests/**/*.integration.test.ts"],
     setupFiles: ["../__tests__/setup/extension.setup.ts"],
-    pool: "forks",
+    pool: "vmThreads",
     poolOptions: {
-      forks: {
-        singleFork: true,
+      vmThreads: {
+        singleThread: true,
       },
     },
     testTimeout: 15_000,
