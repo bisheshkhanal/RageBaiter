@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 import {
   test,
   expect,
@@ -61,13 +63,19 @@ const triggerIntervention = async (serviceWorker: Worker, page: Page): Promise<v
 
 test.describe("Intervention flow on demo tweet", () => {
   test.describe.configure({ mode: "serial" });
+  test.setTimeout(120_000);
 
   let context: BrowserContext;
   let serviceWorker: Worker;
   let page: Page;
+  let userDataDir = "";
 
-  test.beforeAll(async () => {
-    context = await chromium.launchPersistentContext("", {
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(120_000);
+
+    userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "ragebaiter-pw-"));
+
+    context = await chromium.launchPersistentContext(userDataDir, {
       channel: "chromium",
       headless: false,
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
@@ -79,6 +87,10 @@ test.describe("Intervention flow on demo tweet", () => {
   test.afterAll(async () => {
     if (context) {
       await context.close();
+    }
+
+    if (userDataDir) {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
     }
   });
 
@@ -103,7 +115,7 @@ test.describe("Intervention flow on demo tweet", () => {
   test("detects demo tweet and renders intervention popup in shadow DOM", async () => {
     await triggerIntervention(serviceWorker, page);
 
-    const popup = page.locator("pierce/.rb-popup");
+    const popup = page.locator(".rb-popup");
     await expect(popup).toBeVisible();
     await expect(page.locator('article[data-testid="tweet"]')).toHaveAttribute(
       "data-ragebaiter-level",
@@ -113,7 +125,7 @@ test.describe("Intervention flow on demo tweet", () => {
 
   test("submits Agree feedback and stores agreed state", async () => {
     await triggerIntervention(serviceWorker, page);
-    await page.locator('pierce/[data-testid="feedback-agree-button"]').click();
+    await page.locator('[data-testid="feedback-agree-button"]').click();
 
     const tweet = page.locator('article[data-testid="tweet"]');
     await expect.poll(async () => tweet.getAttribute("data-ragebaiter-ui")).toBe("agreed");
@@ -121,10 +133,10 @@ test.describe("Intervention flow on demo tweet", () => {
 
   test("dismiss action closes popup and stores acknowledged state", async () => {
     await triggerIntervention(serviceWorker, page);
-    await page.locator("pierce/.rb-proceed-btn").click();
+    await page.locator(".rb-proceed-btn").click();
 
     const tweet = page.locator('article[data-testid="tweet"]');
     await expect.poll(async () => tweet.getAttribute("data-ragebaiter-ui")).toBe("acknowledged");
-    await expect(page.locator("pierce/.rb-popup")).toHaveCount(0);
+    await expect(page.locator(".rb-popup")).toHaveCount(0);
   });
 });
