@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Line, Html, CatmullRomLine } from "@react-three/drei";
+import { Html, CatmullRomLine } from "@react-three/drei";
 import * as THREE from "three";
 import type { HistoryEntry } from "../types";
 import { rageColor, vectorToPosition } from "../types";
@@ -17,7 +17,7 @@ function WaypointMarker({ entry, index }: { entry: HistoryEntry; index: number }
   // size(90) is 3x size(10): base * (0.5 + score/60)
   const size = 0.06 * (0.5 + entry.rage_score / 60);
 
-  useFrame((_, delta) => {
+  useFrame(() => {
     if (meshRef.current) {
       // Gentle float
       meshRef.current.position.y = pos[1] + Math.sin(Date.now() * 0.002 + index) * 0.01;

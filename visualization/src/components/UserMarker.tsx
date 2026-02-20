@@ -1,8 +1,8 @@
-import { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
-import type { VectorSnapshot } from '../types';
-import { vectorToPosition } from '../types';
+import { useRef } from "react";
+import { useFrame } from "@react-three/fiber";
+import type * as THREE from "three";
+import type { VectorSnapshot } from "../types";
+import { vectorToPosition } from "../types";
 
 interface UserMarkerProps {
   vector: VectorSnapshot;
@@ -22,8 +22,7 @@ export function UserMarker({ vector }: UserMarkerProps) {
     const glowPulse = 1 + Math.sin(t * 2) * 0.15;
     if (glowRef.current) {
       glowRef.current.scale.setScalar(glowPulse);
-      (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.12 + Math.sin(t * 3) * 0.06;
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(t * 3) * 0.06;
     }
   });
 
@@ -32,22 +31,13 @@ export function UserMarker({ vector }: UserMarkerProps) {
       {/* Outer glow sphere */}
       <mesh ref={glowRef}>
         <sphereGeometry args={[0.22, 24, 24]} />
-        <meshBasicMaterial
-          color="#a78bfa"
-          transparent
-          opacity={0.15}
-          depthWrite={false}
-        />
+        <meshBasicMaterial color="#a78bfa" transparent opacity={0.15} depthWrite={false} />
       </mesh>
 
       {/* Core sphere */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[0.1, 32, 32]} />
-        <meshStandardMaterial
-          color="#a78bfa"
-          emissive="#a78bfa"
-          emissiveIntensity={0.7}
-        />
+        <meshStandardMaterial color="#a78bfa" emissive="#a78bfa" emissiveIntensity={0.7} />
       </mesh>
 
       {/* Small ring around the marker */}
