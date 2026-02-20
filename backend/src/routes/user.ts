@@ -126,8 +126,10 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
 
   public async exportUserData(
     authId: string,
-    _accessToken: string
+    accessToken: string
   ): Promise<UserExportPayload | null> {
+    void accessToken;
+
     const profile = await this.getUserProfile(authId);
     if (!profile) {
       return null;
@@ -146,7 +148,9 @@ class SupabaseUserPrivacyRepository implements UserPrivacyRepository {
     };
   }
 
-  public async deleteUserData(authId: string, _accessToken: string): Promise<UserDeleteResult> {
+  public async deleteUserData(authId: string, accessToken: string): Promise<UserDeleteResult> {
+    void accessToken;
+
     const url = new URL(`${this.supabaseUrl}/rest/v1/users`);
     url.searchParams.set("auth_id", `eq.${authId}`);
     url.searchParams.set("select", "id");

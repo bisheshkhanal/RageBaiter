@@ -82,8 +82,10 @@ class SupabaseFeedbackRepository implements FeedbackRepository {
     authId: string,
     tweetId: string,
     feedbackType: FeedbackType,
-    _vectorDelta?: number[]
+    vectorDelta?: number[]
   ): Promise<FeedbackInsertResult> {
+    void vectorDelta;
+
     const userId = await this.getUserIdByAuthId(authId);
     if (userId === null) {
       throw new Error("User not found");

@@ -15,9 +15,12 @@ class InMemoryFeedbackRepository implements FeedbackRepository {
   public async upsertFeedback(
     authId: string,
     tweetId: string,
-    _feedbackType: "agree" | "disagree" | "dismiss",
-    _vectorDelta?: number[]
+    feedbackType: "agree" | "disagree" | "dismiss",
+    vectorDelta?: number[]
   ): Promise<StoredFeedback> {
+    void feedbackType;
+    void vectorDelta;
+
     const key = `${authId}:${tweetId}`;
     const existing = this.rows.get(key);
     if (existing) {
