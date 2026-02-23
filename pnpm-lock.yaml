@@ -47,6 +47,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.13.8
         version: 1.19.9(hono@4.11.9)
+      '@ragebaiter/shared':
+        specifier: workspace:^
+        version: link:../shared
       '@sentry/node':
         specifier: ^10.39.0
         version: 10.39.0
@@ -60,6 +63,9 @@ importers:
 
   extension:
     dependencies:
+      '@ragebaiter/shared':
+        specifier: workspace:^
+        version: link:../shared
       '@sentry/browser':
         specifier: ^10.39.0
         version: 10.39.0

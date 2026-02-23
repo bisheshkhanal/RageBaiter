@@ -23,6 +23,28 @@
   margin: 0;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quota-badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: #4b5563;
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.quota-badge.loading {
+  color: #9ca3af;
+  background: transparent;
+  border-color: transparent;
+}
+
 .vector-badge {
   display: flex;
   flex-direction: column;

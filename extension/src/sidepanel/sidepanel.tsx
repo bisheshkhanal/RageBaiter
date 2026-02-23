@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 
+import { AuthGate } from "../components/AuthGate.js";
+import {
+  createMessageEnvelope,
+  MESSAGE_TYPES,
+  type QuotaStatusResponsePayload,
+} from "../messaging/protocol.js";
 import { sendQuizCompleted, sendSettingsUpdated } from "../messaging/runtime.js";
 import {
   clearQuizResult,
@@ -54,6 +60,29 @@ export function SidePanel(): React.ReactElement {
   const [isPrivacyActionRunning, setIsPrivacyActionRunning] = useState(false);
   const [vectorHistory, setVectorHistory] = useState<FeedbackHistoryItem[]>([]);
   const [isFromOnboarding, setIsFromOnboarding] = useState(false);
+  const [quota, setQuota] = useState<QuotaStatusResponsePayload | null>(null);
+  const [isQuotaLoading, setIsQuotaLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchQuota = async () => {
+      try {
+        const response = await chrome.runtime.sendMessage(
+          createMessageEnvelope(MESSAGE_TYPES.QUOTA_STATUS_REQUEST, {})
+        );
+
+        if (response?.ok && response.payload) {
+          setQuota(response.payload);
+        }
+      } catch (error) {
+        console.error("Failed to fetch quota:", error);
+      } finally {
+        setIsQuotaLoading(false);
+      }
+    };
+
+    fetchQuota();
+  }, []);
 
   useEffect(() => {
     const loadStoredData = async () => {
@@ -89,6 +118,52 @@ export function SidePanel(): React.ReactElement {
     loadStoredData();
   }, []);
 
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      setIsProfileLoading(true);
+      const stored = await chrome.storage.local.get([
+        "backendUrl",
+        "apiKey",
+        "authToken",
+        "accessToken",
+      ]);
+      const backendUrl = (stored.backendUrl as string | undefined) ?? "http://localhost:3001";
+      const rawToken = (
+        (stored.authToken as string | undefined) ??
+        (stored.accessToken as string | undefined) ??
+        ""
+      )
+        .trim()
+        .replace(/^Bearer\s+/i, "");
+
+      if (!rawToken) {
+        setIsProfileLoading(false);
+        return;
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${rawToken}`,
+      };
+
+      const response = await fetch(`${backendUrl}/api/auth/me`, {
+        method: "GET",
+        headers,
+      });
+
+      if (response.ok) {
+        const localData = await chrome.storage.local.get(["userVector"]);
+        if (!localData.userVector) {
+          setQuizState("onboarding");
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to fetch user profile:", error);
+    } finally {
+      setIsProfileLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const handleStorageChange = (
       changes: Record<string, chrome.storage.StorageChange>,
@@ -107,13 +182,17 @@ export function SidePanel(): React.ReactElement {
       if (Array.isArray(vectorHistoryChange?.newValue)) {
         setVectorHistory(vectorHistoryChange.newValue as FeedbackHistoryItem[]);
       }
+
+      if (changes.authToken?.newValue || changes.accessToken?.newValue) {
+        void fetchUserProfile();
+      }
     };
 
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => {
       chrome.storage.onChanged.removeListener(handleStorageChange);
     };
-  }, []);
+  }, [fetchUserProfile]);
 
   const handleStartQuiz = useCallback(() => {
     setQuizState("quiz");
@@ -415,7 +494,7 @@ export function SidePanel(): React.ReactElement {
   }, [getBackendRequestConfig, readErrorMessage]);
 
   const renderQuizContent = () => {
-    if (isLoading) {
+    if (isLoading || isProfileLoading) {
       return <div className="tab-content">Loading...</div>;
     }
 
@@ -611,87 +690,111 @@ export function SidePanel(): React.ReactElement {
   };
 
   return (
-    <div className="sidepanel-container">
-      <header className="sidepanel-header">
-        <h1>RageBaiter</h1>
-        {userVector && (
-          <div className="vector-badge">
-            <span className="vector-label">Your Position</span>
-            <span className="vector-value" data-testid="user-vector-badge">
-              ({userVector.x.toFixed(2)}, {userVector.y.toFixed(2)})
-            </span>
+    <AuthGate>
+      <div className="sidepanel-container">
+        <header className="sidepanel-header">
+          <h1>RageBaiter</h1>
+          <div className="header-right">
+            {isQuotaLoading ? (
+              <div className="quota-badge loading">Loading quota...</div>
+            ) : quota ? (
+              <div className="quota-badge">
+                {quota.hasOwnKey ? (
+                  <span>Using your key</span>
+                ) : (
+                  <span>
+                    {quota.used} / {quota.limit} analyses this month
+                  </span>
+                )}
+              </div>
+            ) : null}
+            {userVector && (
+              <div className="vector-badge">
+                <span className="vector-label">Your Position</span>
+                <span className="vector-value" data-testid="user-vector-badge">
+                  ({userVector.x.toFixed(2)}, {userVector.y.toFixed(2)})
+                </span>
+              </div>
+            )}
           </div>
-        )}
-      </header>
+        </header>
 
-      <nav className="sidepanel-tabs">
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "quiz" ? "active" : ""}`}
-          onClick={() => setActiveTab("quiz")}
+        <nav className="sidepanel-tabs">
+          <button
+            type="button"
+            className={`tab-button ${activeTab === "quiz" ? "active" : ""}`}
+            onClick={() => setActiveTab("quiz")}
+          >
+            Political Quiz
+          </button>
+          <button
+            type="button"
+            className={`tab-button ${activeTab === "debug" ? "active" : ""}`}
+            onClick={() => setActiveTab("debug")}
+          >
+            Debug Panel
+          </button>
+          <button
+            type="button"
+            className={`tab-button ${activeTab === "settings" ? "active" : ""}`}
+            onClick={() => setActiveTab("settings")}
+          >
+            Settings
+          </button>
+        </nav>
+
+        <main
+          className={`sidepanel-content ${activeTab === "debug" ? "no-padding no-scroll" : ""}`}
         >
-          Political Quiz
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "debug" ? "active" : ""}`}
-          onClick={() => setActiveTab("debug")}
-        >
-          Debug Panel
-        </button>
-        <button
-          type="button"
-          className={`tab-button ${activeTab === "settings" ? "active" : ""}`}
-          onClick={() => setActiveTab("settings")}
-        >
-          Settings
-        </button>
-      </nav>
+          {activeTab === "quiz" && renderQuizContent()}
 
-      <main className={`sidepanel-content ${activeTab === "debug" ? "no-padding no-scroll" : ""}`}>
-        {activeTab === "quiz" && renderQuizContent()}
+          {activeTab === "debug" && <DebugPanel />}
 
-        {activeTab === "debug" && <DebugPanel />}
+          {activeTab === "settings" && (
+            <div className="tab-content">
+              <h2>Settings</h2>
 
-        {activeTab === "settings" && (
-          <div className="tab-content">
-            <h2>Settings</h2>
+              <SiteToggle />
 
-            <SiteToggle />
+              <LLMConfig />
 
-            <LLMConfig />
-
-            <div className="settings-section">
-              <h3>Privacy</h3>
-              <button type="button" className="action-button primary" onClick={handleSettingsSync}>
-                Sync Settings
-              </button>
-              <button
-                type="button"
-                className="action-button secondary"
-                onClick={handleExportData}
-                disabled={isPrivacyActionRunning}
-              >
-                {isPrivacyActionRunning ? "Working..." : "Export My Data"}
-              </button>
-              <button
-                type="button"
-                className="action-button danger"
-                onClick={handleDeleteData}
-                disabled={isPrivacyActionRunning}
-              >
-                Delete All Data
-              </button>
-              <p className="setting-hint privacy-hint">
-                Requires stored bearer token in <code>authToken</code> or <code>accessToken</code>.
-              </p>
-              {privacyStatus && <p className="privacy-status privacy-success">{privacyStatus}</p>}
-              {privacyError && <p className="privacy-status privacy-error">{privacyError}</p>}
+              <div className="settings-section">
+                <h3>Privacy</h3>
+                <button
+                  type="button"
+                  className="action-button primary"
+                  onClick={handleSettingsSync}
+                >
+                  Sync Settings
+                </button>
+                <button
+                  type="button"
+                  className="action-button secondary"
+                  onClick={handleExportData}
+                  disabled={isPrivacyActionRunning}
+                >
+                  {isPrivacyActionRunning ? "Working..." : "Export My Data"}
+                </button>
+                <button
+                  type="button"
+                  className="action-button danger"
+                  onClick={handleDeleteData}
+                  disabled={isPrivacyActionRunning}
+                >
+                  Delete All Data
+                </button>
+                <p className="setting-hint privacy-hint">
+                  Requires stored bearer token in <code>authToken</code> or <code>accessToken</code>
+                  .
+                </p>
+                {privacyStatus && <p className="privacy-status privacy-success">{privacyStatus}</p>}
+                {privacyError && <p className="privacy-status privacy-error">{privacyError}</p>}
+              </div>
             </div>
-          </div>
-        )}
-      </main>
-    </div>
+          )}
+        </main>
+      </div>
+    </AuthGate>
   );
 }
 

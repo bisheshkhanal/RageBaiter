@@ -142,7 +142,13 @@ const STORAGE_KEYS = {
   LLM_USE_FALLBACK: "llmUseFallback",
   LLM_USAGE_STATS: "llmUsageStats",
   LLM_CONNECTION_STATUS: "llmConnectionStatus",
+  BYOK_OPENAI_KEY: "byokOpenaiKey",
+  BYOK_ANTHROPIC_KEY: "byokAnthropicKey",
+  BYOK_GOOGLE_KEY: "byokGoogleKey",
+  BYOK_PRIMARY_PROVIDER: "byokPrimaryProvider",
 } as const;
+
+export type ByokProvider = "openai" | "anthropic" | "google";
 
 export const isValidProvider = (value: string): value is LlmProvider => {
   return LLM_PROVIDERS.some((p) => p.id === value);
@@ -298,5 +304,77 @@ export const clearLegacyLlmStorageKeys = async (): Promise<void> => {
     STORAGE_KEYS.LLM_USE_FALLBACK,
     STORAGE_KEYS.LLM_USAGE_STATS,
     STORAGE_KEYS.LLM_CONNECTION_STATUS,
+  ]);
+};
+
+export const storeByokKey = async (provider: ByokProvider, apiKey: string): Promise<void> => {
+  const keyMap: Record<ByokProvider, string> = {
+    openai: STORAGE_KEYS.BYOK_OPENAI_KEY,
+    anthropic: STORAGE_KEYS.BYOK_ANTHROPIC_KEY,
+    google: STORAGE_KEYS.BYOK_GOOGLE_KEY,
+  };
+  await chrome.storage.local.set({ [keyMap[provider]]: apiKey });
+};
+
+export const getByokKey = async (provider: ByokProvider): Promise<string | undefined> => {
+  const keyMap: Record<ByokProvider, string> = {
+    openai: STORAGE_KEYS.BYOK_OPENAI_KEY,
+    anthropic: STORAGE_KEYS.BYOK_ANTHROPIC_KEY,
+    google: STORAGE_KEYS.BYOK_GOOGLE_KEY,
+  };
+  const data = await chrome.storage.local.get(keyMap[provider]);
+  return data[keyMap[provider]] as string | undefined;
+};
+
+export const getAllByokKeys = async (): Promise<Record<ByokProvider, string | undefined>> => {
+  const data = await chrome.storage.local.get([
+    STORAGE_KEYS.BYOK_OPENAI_KEY,
+    STORAGE_KEYS.BYOK_ANTHROPIC_KEY,
+    STORAGE_KEYS.BYOK_GOOGLE_KEY,
+  ]);
+  return {
+    openai: data[STORAGE_KEYS.BYOK_OPENAI_KEY] as string | undefined,
+    anthropic: data[STORAGE_KEYS.BYOK_ANTHROPIC_KEY] as string | undefined,
+    google: data[STORAGE_KEYS.BYOK_GOOGLE_KEY] as string | undefined,
+  };
+};
+
+export const hasByokKey = async (): Promise<boolean> => {
+  const keys = await getAllByokKeys();
+  return Boolean(keys.openai || keys.anthropic || keys.google);
+};
+
+export const getPrimaryByokProvider = async (): Promise<ByokProvider | undefined> => {
+  const data = await chrome.storage.local.get(STORAGE_KEYS.BYOK_PRIMARY_PROVIDER);
+  const provider = data[STORAGE_KEYS.BYOK_PRIMARY_PROVIDER] as ByokProvider | undefined;
+  if (provider && ["openai", "anthropic", "google"].includes(provider)) {
+    return provider;
+  }
+  const keys = await getAllByokKeys();
+  if (keys.openai) return "openai";
+  if (keys.anthropic) return "anthropic";
+  if (keys.google) return "google";
+  return undefined;
+};
+
+export const setPrimaryByokProvider = async (provider: ByokProvider): Promise<void> => {
+  await chrome.storage.local.set({ [STORAGE_KEYS.BYOK_PRIMARY_PROVIDER]: provider });
+};
+
+export const clearByokKey = async (provider: ByokProvider): Promise<void> => {
+  const keyMap: Record<ByokProvider, string> = {
+    openai: STORAGE_KEYS.BYOK_OPENAI_KEY,
+    anthropic: STORAGE_KEYS.BYOK_ANTHROPIC_KEY,
+    google: STORAGE_KEYS.BYOK_GOOGLE_KEY,
+  };
+  await chrome.storage.local.remove(keyMap[provider]);
+};
+
+export const clearAllByokKeys = async (): Promise<void> => {
+  await chrome.storage.local.remove([
+    STORAGE_KEYS.BYOK_OPENAI_KEY,
+    STORAGE_KEYS.BYOK_ANTHROPIC_KEY,
+    STORAGE_KEYS.BYOK_GOOGLE_KEY,
+    STORAGE_KEYS.BYOK_PRIMARY_PROVIDER,
   ]);
 };

@@ -14,6 +14,9 @@ export const MESSAGE_TYPES = {
   SITE_CONFIG_REQUEST: "SITE_CONFIG_REQUEST",
   SITE_CONFIG_RESPONSE: "SITE_CONFIG_RESPONSE",
   GLOBAL_PAUSE_TOGGLED: "GLOBAL_PAUSE_TOGGLED",
+  PHASE2_QUOTA_EXHAUSTED: "PHASE2_QUOTA_EXHAUSTED",
+  QUOTA_STATUS_REQUEST: "QUOTA_STATUS_REQUEST",
+  QUOTA_STATUS_RESPONSE: "QUOTA_STATUS_RESPONSE",
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
@@ -161,6 +164,25 @@ export type GlobalPauseToggledPayload = {
   paused: boolean;
 };
 
+export type Phase2QuotaExhaustedPayload = {
+  tweetId: string;
+  quota: {
+    used: number;
+    limit: number;
+    resetsAt: string;
+  };
+};
+
+export type QuotaStatusRequestPayload = Record<string, never>;
+
+export type QuotaStatusResponsePayload = {
+  used: number;
+  limit: number;
+  remaining: number;
+  resetsAt: string;
+  hasOwnKey: boolean;
+};
+
 export type LlmConfigUpdatedMessage = MessageEnvelope<
   typeof MESSAGE_TYPES.LLM_CONFIG_UPDATED,
   LlmConfigPayload
@@ -196,6 +218,21 @@ export type GlobalPauseToggledMessage = MessageEnvelope<
   GlobalPauseToggledPayload
 >;
 
+export type Phase2QuotaExhaustedMessage = MessageEnvelope<
+  typeof MESSAGE_TYPES.PHASE2_QUOTA_EXHAUSTED,
+  Phase2QuotaExhaustedPayload
+>;
+
+export type QuotaStatusRequestMessage = MessageEnvelope<
+  typeof MESSAGE_TYPES.QUOTA_STATUS_REQUEST,
+  QuotaStatusRequestPayload
+>;
+
+export type QuotaStatusResponseMessage = MessageEnvelope<
+  typeof MESSAGE_TYPES.QUOTA_STATUS_RESPONSE,
+  QuotaStatusResponsePayload
+>;
+
 export type ExtensionMessage =
   | TweetDetectedMessage
   | AnalyzeResultMessage
@@ -209,7 +246,10 @@ export type ExtensionMessage =
   | SiteConfigUpdatedMessage
   | SiteConfigRequestMessage
   | SiteConfigResponseMessage
-  | GlobalPauseToggledMessage;
+  | GlobalPauseToggledMessage
+  | Phase2QuotaExhaustedMessage
+  | QuotaStatusRequestMessage
+  | QuotaStatusResponseMessage;
 
 export type MessageAck<TPayload = undefined> =
   | {

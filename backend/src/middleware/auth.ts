@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
-import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { AppEnv } from "../types.js";
+import { getSupabaseAuthService } from "../services/supabase-auth.js";
 
 type EnvShape = {
   process?: {
@@ -18,80 +18,6 @@ const unauthorizedResponse = {
     code: "UNAUTHORIZED",
     message: "Missing or invalid authentication credentials",
   },
-};
-
-type JwtHeader = {
-  alg?: unknown;
-  typ?: unknown;
-};
-
-type JwtPayload = {
-  sub?: unknown;
-  exp?: unknown;
-};
-
-const decodeBase64UrlToJson = <T>(segment: string): T | null => {
-  try {
-    const decoded = Buffer.from(segment, "base64url").toString("utf8");
-    return JSON.parse(decoded) as T;
-  } catch {
-    return null;
-  }
-};
-
-const verifySupabaseJwt = (token: string, secret: string): string | null => {
-  const tokenParts = token.split(".");
-  if (tokenParts.length !== 3) {
-    return null;
-  }
-
-  const [headerSegment, payloadSegment, signatureSegment] = tokenParts;
-  if (!headerSegment || !payloadSegment || !signatureSegment) {
-    return null;
-  }
-
-  const header = decodeBase64UrlToJson<JwtHeader>(headerSegment);
-  const payload = decodeBase64UrlToJson<JwtPayload>(payloadSegment);
-  if (!header || !payload) {
-    return null;
-  }
-
-  if (header.alg !== "HS256") {
-    return null;
-  }
-
-  const signingInput = `${headerSegment}.${payloadSegment}`;
-  const expectedSignature = createHmac("sha256", secret).update(signingInput).digest();
-
-  let receivedSignature: Buffer;
-  try {
-    receivedSignature = Buffer.from(signatureSegment, "base64url");
-  } catch {
-    return null;
-  }
-
-  if (receivedSignature.length !== expectedSignature.length) {
-    return null;
-  }
-
-  if (!timingSafeEqual(receivedSignature, expectedSignature)) {
-    return null;
-  }
-
-  if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) {
-    return null;
-  }
-
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  if (payload.exp <= nowSeconds) {
-    return null;
-  }
-
-  if (typeof payload.sub !== "string" || payload.sub.length === 0) {
-    return null;
-  }
-
-  return payload.sub;
 };
 
 export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -121,17 +47,18 @@ export const authMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     return c.json(unauthorizedResponse, 401);
   }
 
-  const jwtSecret = readEnv("SUPABASE_JWT_SECRET");
-  if (typeof jwtSecret !== "string" || jwtSecret.length === 0) {
+  try {
+    const authService = getSupabaseAuthService();
+    const result = await authService.getSession(accessToken);
+
+    if (result.error || !result.user) {
+      return c.json(unauthorizedResponse, 401);
+    }
+
+    c.set("authId", result.user.id);
+    await next();
+  } catch (error) {
+    console.error("[AuthMiddleware] Verification failed:", error);
     return c.json(unauthorizedResponse, 401);
   }
-
-  const authId = verifySupabaseJwt(accessToken, jwtSecret);
-  if (!authId) {
-    return c.json(unauthorizedResponse, 401);
-  }
-
-  c.set("authId", authId);
-
-  await next();
 };

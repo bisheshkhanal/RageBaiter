@@ -802,6 +802,62 @@ const routeMessage = async (
       return ok();
     }
 
+    case MESSAGE_TYPES.QUOTA_STATUS_REQUEST: {
+      try {
+        const stored = await chrome.storage.local.get(["backendUrl", "authToken", "accessToken"]);
+        const backendUrl = (stored.backendUrl as string | undefined) ?? "http://localhost:3001";
+        const rawToken = (
+          (stored.authToken as string | undefined) ??
+          (stored.accessToken as string | undefined) ??
+          ""
+        )
+          .trim()
+          .replace(/^Bearer\s+/i, "");
+
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+
+        if (rawToken.length > 0) {
+          headers.Authorization = `Bearer ${rawToken}`;
+        }
+
+        const response = await fetch(`${backendUrl}/api/quota`, {
+          method: "GET",
+          headers,
+        });
+
+        if (!response.ok) {
+          return fail(`Quota request failed: ${response.status}`);
+        }
+
+        const quota = (await response.json()) as {
+          used: number;
+          limit: number;
+          remaining: number;
+          resetsAt: string;
+          hasOwnKey: boolean;
+        };
+
+        return { ok: true, payload: quota };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return fail(`Quota request failed: ${message}`);
+      }
+    }
+
+    case MESSAGE_TYPES.PHASE2_QUOTA_EXHAUSTED: {
+      void logger.info("Phase 2 quota exhausted", message.payload);
+      await chrome.storage.local.set({
+        quotaExhausted: {
+          tweetId: message.payload.tweetId,
+          quota: message.payload.quota,
+          timestamp: Date.now(),
+        },
+      });
+      return ok();
+    }
+
     default:
       return fail(`Unhandled message type: ${(message as { type: string }).type}`);
   }

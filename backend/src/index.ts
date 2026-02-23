@@ -9,8 +9,12 @@ import { authMiddleware } from "./middleware/auth.js";
 import { dailyCapMiddleware } from "./middleware/daily-cap.js";
 import { rateLimitMiddleware } from "./middleware/rate-limit.js";
 import { analyzeRoutes } from "./routes/analyze.js";
+import { analyzePhase1Routes } from "./routes/analyze-phase1.js";
+import { analyzePhase2Routes } from "./routes/analyze-phase2.js";
+import { authRoutes } from "./routes/auth.js";
 import { demoRoutes } from "./routes/demo.js";
 import { feedbackRoutes } from "./routes/feedback.js";
+import { quotaRoutes } from "./routes/quota.js";
 import { quizRoutes } from "./routes/quiz.js";
 import { userRoutes } from "./routes/user.js";
 import type { AppEnv } from "./types.js";
@@ -131,13 +135,25 @@ app.use(
 
 app.get("/health", (c) => c.json({ status: "ok", version: "1.0.0" }, 200));
 app.route("/demo", demoRoutes);
+app.route("/api/auth", authRoutes);
 
-app.use("/api/*", authMiddleware);
+const PUBLIC_AUTH_PATHS = ["/api/auth/signup", "/api/auth/login", "/api/auth/refresh"];
+
+app.use("/api/*", async (c, next) => {
+  if (PUBLIC_AUTH_PATHS.includes(c.req.path)) {
+    await next();
+    return;
+  }
+  return authMiddleware(c, next);
+});
 app.use("/api/*", rateLimitMiddleware);
 app.use("/api/analyze", dailyCapMiddleware);
 
 app.route("/api/analyze", analyzeRoutes);
+app.route("/api/analyze/phase1", analyzePhase1Routes);
+app.route("/api/analyze/phase2", analyzePhase2Routes);
 app.route("/api/quiz", quizRoutes);
+app.route("/api/quota", quotaRoutes);
 app.route("/api/user", userRoutes);
 app.route("/api/feedback", feedbackRoutes);
 
