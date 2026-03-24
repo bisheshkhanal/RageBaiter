@@ -87,7 +87,13 @@ export function SidePanel(): React.ReactElement {
   useEffect(() => {
     const loadStoredData = async () => {
       const [storageResult, quizResult] = await Promise.all([
-        chrome.storage.local.get(["userVector", "vectorHistory", "isFirstInstall"]),
+        chrome.storage.local.get([
+          "userVector",
+          "vectorHistory",
+          "isFirstInstall",
+          "authToken",
+          "accessToken",
+        ]),
         getStoredQuizResult(),
       ]);
 
@@ -98,6 +104,8 @@ export function SidePanel(): React.ReactElement {
       if (Array.isArray(storageResult.vectorHistory)) {
         setVectorHistory(storageResult.vectorHistory);
       }
+
+      const hasAuthToken = Boolean(storageResult.authToken || storageResult.accessToken);
 
       if (storageResult.isFirstInstall === true) {
         setQuizState("onboarding");
@@ -110,6 +118,8 @@ export function SidePanel(): React.ReactElement {
           y: quizResult.vector.economic,
         });
         setQuizState("results");
+      } else if (hasAuthToken && !storageResult.userVector) {
+        setQuizState("onboarding");
       }
 
       setIsLoading(false);

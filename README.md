@@ -20,6 +20,38 @@ RageBaiter is a Manifest V3 Chrome extension built to nudge Twitter/X users out 
 4. Load `extension/dist` into Chrome as an unpacked extension (or use the Vite dev server) once the extension workspace has been built.
 5. Start the backend locally via `pnpm --filter backend dev` (or the equivalent script) and point the extension at that endpoint while testing.
 
+## Running locally
+
+### Backend server
+```bash
+pnpm --filter @ragebaiter/backend dev
+```
+Starts the Hono server with `tsx` (hot-reloads on save). Runs on the port configured in your `.env`.
+
+### Visualization
+```bash
+pnpm --filter @ragebaiter/visualization dev
+```
+Starts the Vite dev server for the 3D vector visualizer. Open the localhost URL printed in the terminal.
+
+### Extension (dev / build)
+
+**Dev mode** (Vite HMR, load `extension/dist` as unpacked in Chrome):
+```bash
+pnpm --filter @ragebaiter/extension dev
+```
+
+**Production build** (outputs to `extension/dist`):
+```bash
+pnpm --filter @ragebaiter/extension build
+```
+Then go to `chrome://extensions`, enable *Developer mode*, click *Load unpacked*, and select `extension/dist`.
+
+### Run everything in parallel
+```bash
+pnpm turbo run dev --parallel
+```
+
 ## Project layout
 - `extension/`: React/Tailwind UI, content scripts, background/service worker, badge, popup, and side panel.
 - `backend/`: Hono API routes for quiz, analysis, feedback, auth, and cache layers.
