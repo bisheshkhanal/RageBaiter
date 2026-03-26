@@ -23,6 +23,7 @@ const createEvent = <TArgs extends unknown[]>() => {
 
 export const createChromeMock = () => {
   const onInstalled = createEvent<[]>();
+  const onStartup = createEvent<[]>();
   const onMessage = createEvent<[unknown, unknown, (response?: unknown) => void]>();
   const onTabUpdated = createEvent<
     [
@@ -45,10 +46,14 @@ export const createChromeMock = () => {
       },
     ]
   >();
+  const onAlarm = createEvent<[{ name: string }]>();
+  const onStorageChanged =
+    createEvent<[{ [key: string]: { oldValue?: unknown; newValue?: unknown } }, string]>();
 
   return {
     runtime: {
       onInstalled,
+      onStartup,
       onMessage,
       sendMessage: vi.fn((_message: unknown, callback?: (response: unknown) => void) => {
         callback?.({ ok: true, payload: undefined });
@@ -85,8 +90,15 @@ export const createChromeMock = () => {
         set: vi.fn(async () => undefined),
         remove: vi.fn(async () => undefined),
       },
-      onChanged:
-        createEvent<[{ [key: string]: { oldValue?: unknown; newValue?: unknown } }, string]>(),
+      session: {
+        get: vi.fn(async () => ({})),
+        set: vi.fn(async () => undefined),
+      },
+      onChanged: onStorageChanged,
+    },
+    alarms: {
+      create: vi.fn(async () => undefined),
+      onAlarm: onAlarm,
     },
   };
 };
