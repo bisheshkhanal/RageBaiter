@@ -152,7 +152,7 @@ describe("service worker messaging layer", () => {
         economic: 0,
         populist: 0,
       },
-      feedbackSyncQueue: [],
+      feedbackQueue: [],
       vectorHistory: [],
       backendUrl: "http://localhost:3001",
       apiKey: "test-key",
@@ -211,7 +211,7 @@ describe("service worker messaging layer", () => {
     expect(updatedVector.social).toBeGreaterThan(0);
     expect(updatedVector.economic).toBeLessThan(0);
 
-    const queue = storageState.feedbackSyncQueue as Array<{ syncAttempts: number }>;
+    const queue = storageState.feedbackQueue as Array<{ syncAttempts: number }>;
     expect(queue).toHaveLength(1);
     expect(queue[0]?.syncAttempts).toBe(1);
 
@@ -232,7 +232,7 @@ describe("service worker messaging layer", () => {
         economic: 0,
         populist: 0,
       },
-      feedbackSyncQueue: [],
+      feedbackQueue: [],
       vectorHistory: [],
       backendUrl: "http://localhost:3001",
       apiKey: "test-key",
@@ -277,7 +277,7 @@ describe("service worker messaging layer", () => {
       {}
     );
 
-    expect((storageState.feedbackSyncQueue as unknown[]).length).toBe(1);
+    expect((storageState.feedbackQueue as unknown[]).length).toBe(1);
 
     await sendToListener(
       listener,
@@ -295,7 +295,7 @@ describe("service worker messaging layer", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(storageState.feedbackSyncQueue).toEqual([]);
+    expect(storageState.feedbackQueue).toEqual([]);
   });
 
   it("skips intervention while cooldown is active", async () => {
@@ -354,5 +354,203 @@ describe("service worker messaging layer", () => {
       error: "Invalid message envelope",
       retriable: false,
     });
+  });
+
+  it("retries QUOTA_STATUS_REQUEST through refresh on 401 and updates stored tokens", async () => {
+    await import("../src/background/service-worker.js");
+
+    const chromeMock = (globalThis as unknown as { chrome: unknown }).chrome as ChromeMock;
+    const listener = getMessageHandler(chromeMock);
+
+    const storageState: Record<string, unknown> = {
+      backendUrl: "http://localhost:3001",
+      authToken: "expired-access-token",
+      refreshToken: "valid-refresh-token",
+    };
+
+    chromeMock.storage.local.get.mockImplementation((async (keys: unknown) => {
+      if (typeof keys === "string") {
+        return { [keys]: storageState[keys] };
+      }
+
+      if (Array.isArray(keys)) {
+        return Object.fromEntries(keys.map((key) => [key, storageState[key]]));
+      }
+
+      return storageState;
+    }) as unknown as () => Promise<{}>);
+
+    chromeMock.storage.local.set.mockImplementation((async (payload: Record<string, unknown>) => {
+      Object.assign(storageState, payload);
+      return undefined;
+    }) as unknown as () => Promise<undefined>);
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: { message: "Unauthorized" } }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          session: {
+            accessToken: "new-access-token",
+            refreshToken: "new-refresh-token",
+            expiresAt: Date.now() / 1000 + 3600,
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          used: 5,
+          limit: 100,
+          remaining: 95,
+          resetsAt: "2026-04-01T00:00:00Z",
+          hasOwnKey: false,
+        }),
+      } as Response);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await sendToListener(
+      listener,
+      createMessageEnvelope(MESSAGE_TYPES.QUOTA_STATUS_REQUEST, {}),
+      {}
+    );
+
+    expect(response).toEqual({
+      ok: true,
+      payload: {
+        used: 5,
+        limit: 100,
+        remaining: 95,
+        resetsAt: "2026-04-01T00:00:00Z",
+        hasOwnKey: false,
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3001/api/quota", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer expired-access-token",
+      },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3001/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: "valid-refresh-token" }),
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://localhost:3001/api/quota", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer new-access-token",
+      },
+    });
+
+    expect(storageState.authToken).toBe("new-access-token");
+    expect(storageState.refreshToken).toBe("new-refresh-token");
+  });
+
+  it("clears stale auth state when refresh fails on QUOTA_STATUS_REQUEST 401", async () => {
+    await import("../src/background/service-worker.js");
+
+    const chromeMock = (globalThis as unknown as { chrome: unknown }).chrome as ChromeMock;
+    const listener = getMessageHandler(chromeMock);
+
+    const storageState: Record<string, unknown> = {
+      backendUrl: "http://localhost:3001",
+      authToken: "expired-access-token",
+      refreshToken: "invalid-refresh-token",
+    };
+
+    chromeMock.storage.local.get.mockImplementation((async (keys: unknown) => {
+      if (typeof keys === "string") {
+        return { [keys]: storageState[keys] };
+      }
+
+      if (Array.isArray(keys)) {
+        return Object.fromEntries(keys.map((key) => [key, storageState[key]]));
+      }
+
+      return storageState;
+    }) as unknown as () => Promise<{}>);
+
+    chromeMock.storage.local.set.mockImplementation((async (payload: Record<string, unknown>) => {
+      Object.assign(storageState, payload);
+      return undefined;
+    }) as unknown as () => Promise<undefined>);
+
+    const removedKeys: string[] = [];
+    chromeMock.storage.local.remove.mockImplementation((async (keys: unknown) => {
+      if (Array.isArray(keys)) {
+        removedKeys.push(...keys);
+        for (const key of keys) {
+          delete storageState[key];
+        }
+      } else if (typeof keys === "string") {
+        removedKeys.push(keys);
+        delete storageState[keys];
+      }
+      return undefined;
+    }) as unknown as () => Promise<undefined>);
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: { message: "Unauthorized" } }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: {
+            code: "REFRESH_FAILED",
+            message: "Invalid refresh token",
+          },
+        }),
+      } as Response);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await sendToListener(
+      listener,
+      createMessageEnvelope(MESSAGE_TYPES.QUOTA_STATUS_REQUEST, {}),
+      {}
+    );
+
+    expect(response).toEqual({
+      ok: false,
+      error: "Quota request failed: 401",
+      retriable: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3001/api/quota", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer expired-access-token",
+      },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3001/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: "invalid-refresh-token" }),
+    });
+
+    expect(removedKeys).toContain("authToken");
+    expect(removedKeys).toContain("refreshToken");
+    expect(removedKeys).toContain("accessToken");
+    expect(storageState.authToken).toBeUndefined();
+    expect(storageState.refreshToken).toBeUndefined();
   });
 });

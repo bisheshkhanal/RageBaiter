@@ -318,6 +318,71 @@ const buildFeedbackHeaders = async (): Promise<Record<string, string>> => {
   return headers;
 };
 
+const clearStaleAuthState = async (): Promise<void> => {
+  await chrome.storage.local.remove(["authToken", "refreshToken", "accessToken"]);
+  void logger.info("Cleared stale auth state after refresh failure");
+};
+
+const refreshAuthToken = async (): Promise<{ success: boolean; newAccessToken?: string }> => {
+  const stored = await chrome.storage.local.get(["refreshToken", "backendUrl"]);
+  const backendUrl = (stored.backendUrl as string | undefined) ?? "http://localhost:3001";
+  const refreshToken = stored.refreshToken as string | undefined;
+
+  if (!refreshToken || refreshToken.trim().length === 0) {
+    void logger.info("No refresh token available, clearing stale auth state");
+    await clearStaleAuthState();
+    return { success: false };
+  }
+
+  try {
+    const response = await fetch(`${backendUrl}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) {
+      void logger.info("Refresh token request failed, clearing stale auth state");
+      await clearStaleAuthState();
+      return { success: false };
+    }
+
+    const body = (await response.json()) as {
+      success?: boolean;
+      session?: {
+        accessToken?: string;
+        refreshToken?: string;
+        expiresAt?: number;
+      };
+    };
+
+    if (!body.success || !body.session?.accessToken || !body.session?.refreshToken) {
+      void logger.info("Refresh response missing session data, clearing stale auth state");
+      await clearStaleAuthState();
+      return { success: false };
+    }
+
+    const currentStored = await chrome.storage.local.get(["refreshToken"]);
+    if (!currentStored.refreshToken) {
+      void logger.info("Refresh token was cleared during refresh, aborting token update");
+      return { success: false };
+    }
+
+    await chrome.storage.local.set({
+      authToken: body.session.accessToken,
+      refreshToken: body.session.refreshToken,
+    });
+
+    void logger.info("Successfully refreshed auth token");
+    return { success: true, newAccessToken: body.session.accessToken };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown refresh error";
+    void logger.info("Refresh token request threw, clearing stale auth state:", message);
+    await clearStaleAuthState();
+    return { success: false };
+  }
+};
+
 const syncFeedbackQueue = async (): Promise<void> => {
   if (isSyncingFeedbackQueue) {
     return;
@@ -806,26 +871,40 @@ const routeMessage = async (
       try {
         const stored = await chrome.storage.local.get(["backendUrl", "authToken", "accessToken"]);
         const backendUrl = (stored.backendUrl as string | undefined) ?? "http://localhost:3001";
-        const rawToken = (
-          (stored.authToken as string | undefined) ??
-          (stored.accessToken as string | undefined) ??
-          ""
-        )
-          .trim()
-          .replace(/^Bearer\s+/i, "");
 
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
+        const makeQuotaRequest = async (token: string | undefined): Promise<Response> => {
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+
+          const cleanToken = (token ?? "").trim().replace(/^Bearer\s+/i, "");
+          if (cleanToken.length > 0) {
+            headers.Authorization = `Bearer ${cleanToken}`;
+          }
+
+          return fetch(`${backendUrl}/api/quota`, {
+            method: "GET",
+            headers,
+          });
         };
 
-        if (rawToken.length > 0) {
-          headers.Authorization = `Bearer ${rawToken}`;
-        }
+        const rawToken =
+          (stored.authToken as string | undefined) ??
+          (stored.accessToken as string | undefined) ??
+          "";
 
-        const response = await fetch(`${backendUrl}/api/quota`, {
-          method: "GET",
-          headers,
-        });
+        let response = await makeQuotaRequest(rawToken);
+
+        if (response.status === 401) {
+          void logger.info("Quota request returned 401, attempting token refresh");
+          const refreshResult = await refreshAuthToken();
+
+          if (refreshResult.success && refreshResult.newAccessToken) {
+            response = await makeQuotaRequest(refreshResult.newAccessToken);
+          } else {
+            return fail("Quota request failed: 401", true);
+          }
+        }
 
         if (!response.ok) {
           return fail(`Quota request failed: ${response.status}`);
