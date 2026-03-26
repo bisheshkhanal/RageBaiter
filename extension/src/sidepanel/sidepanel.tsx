@@ -503,6 +503,37 @@ export function SidePanel(): React.ReactElement {
     }
   }, [getBackendRequestConfig, readErrorMessage]);
 
+  const handleLogout = useCallback(async () => {
+    setPrivacyError(null);
+    setPrivacyStatus(null);
+    setIsPrivacyActionRunning(true);
+
+    try {
+      const { backendUrl, headers, hasAuthToken } = await getBackendRequestConfig();
+
+      if (hasAuthToken) {
+        try {
+          await fetch(`${backendUrl}/api/auth/logout`, {
+            method: "POST",
+            headers,
+          });
+        } catch (err) {
+          console.warn("Backend logout failed, proceeding with local clear:", err);
+        }
+      }
+
+      await chrome.storage.local.remove(["authToken", "refreshToken", "accessToken"]);
+      setUserVector(null);
+      setVectorHistory([]);
+      setQuizState("intro");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to log out";
+      setPrivacyError(message);
+    } finally {
+      setIsPrivacyActionRunning(false);
+    }
+  }, [getBackendRequestConfig]);
+
   const renderQuizContent = () => {
     if (isLoading || isProfileLoading) {
       return <div className="tab-content">Loading...</div>;
@@ -792,6 +823,14 @@ export function SidePanel(): React.ReactElement {
                   disabled={isPrivacyActionRunning}
                 >
                   Delete All Data
+                </button>
+                <button
+                  type="button"
+                  className="action-button secondary"
+                  onClick={handleLogout}
+                  disabled={isPrivacyActionRunning}
+                >
+                  Log Out
                 </button>
                 <p className="setting-hint privacy-hint">
                   Requires stored bearer token in <code>authToken</code> or <code>accessToken</code>
