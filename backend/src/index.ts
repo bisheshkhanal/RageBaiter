@@ -137,7 +137,12 @@ app.get("/health", (c) => c.json({ status: "ok", version: "1.0.0" }, 200));
 app.route("/demo", demoRoutes);
 app.route("/api/auth", authRoutes);
 
-const PUBLIC_AUTH_PATHS = ["/api/auth/signup", "/api/auth/login", "/api/auth/refresh"];
+const PUBLIC_AUTH_PATHS = [
+  "/api/auth/signup",
+  "/api/auth/login",
+  "/api/auth/refresh",
+  "/api/auth/callback",
+];
 
 app.use("/api/*", async (c, next) => {
   if (PUBLIC_AUTH_PATHS.includes(c.req.path)) {

@@ -1,5 +1,10 @@
 import type { QuotaStatus } from "@ragebaiter/shared";
 
+import {
+  createUserIdentityService,
+  type UserIdentityServiceInterface,
+} from "./user-identity-service.js";
+
 type EnvShape = {
   process?: {
     env?: Record<string, string | undefined>;
@@ -16,6 +21,7 @@ type QuotaServiceOptions = {
   supabaseUrl?: string;
   serviceRoleKey?: string;
   fetchImpl?: typeof fetch;
+  userIdentity?: UserIdentityServiceInterface;
 };
 
 type IncrementResult = {
@@ -44,16 +50,6 @@ const DEFAULT_QUOTA_LIMIT = 50;
 
 const readEnv = (key: string): string | undefined => {
   return (globalThis as EnvShape).process?.env?.[key];
-};
-
-const toUserId = (userId: string): number => {
-  const parsed = Number(userId);
-
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error("User id must be a positive integer string");
-  }
-
-  return parsed;
 };
 
 const asObject = (value: unknown): Record<string, unknown> | null => {
@@ -113,11 +109,13 @@ export class QuotaService {
   public constructor(
     private readonly supabaseUrl: string,
     private readonly serviceRoleKey: string,
-    private readonly fetcher: typeof fetch = fetch
+    private readonly fetcher: typeof fetch = fetch,
+    private readonly userIdentity: UserIdentityServiceInterface
   ) {}
 
-  public async getQuotaStatus(userId: string): Promise<QuotaStatus> {
-    const payload = await this.callRpc("get_or_create_quota", userId);
+  public async getQuotaStatus(authId: string): Promise<QuotaStatus> {
+    const internalUserId = await this.userIdentity.resolveUserId(authId);
+    const payload = await this.callRpc("get_or_create_quota", internalUserId);
     const result = payload as RpcQuotaStatusResponse;
     const fallbackRow = toQuotaRow(result);
     const used = parseNumber(result.analyses_used, fallbackRow?.analyses_used ?? 0);
@@ -133,8 +131,9 @@ export class QuotaService {
     };
   }
 
-  public async incrementQuota(userId: string): Promise<IncrementResult> {
-    const payload = await this.callRpc("increment_quota", userId);
+  public async incrementQuota(authId: string): Promise<IncrementResult> {
+    const internalUserId = await this.userIdentity.resolveUserId(authId);
+    const payload = await this.callRpc("increment_quota", internalUserId);
     const result = payload as RpcIncrementResponse;
 
     return {
@@ -145,12 +144,15 @@ export class QuotaService {
     };
   }
 
-  public async hasQuotaRemaining(userId: string): Promise<boolean> {
-    const status = await this.getQuotaStatus(userId);
+  public async hasQuotaRemaining(authId: string): Promise<boolean> {
+    const status = await this.getQuotaStatus(authId);
     return status.remaining > 0;
   }
 
-  private async callRpc(functionName: string, userId: string): Promise<Record<string, unknown>> {
+  private async callRpc(
+    functionName: string,
+    internalUserId: number
+  ): Promise<Record<string, unknown>> {
     if (!this.supabaseUrl || !this.serviceRoleKey) {
       throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
     }
@@ -163,7 +165,7 @@ export class QuotaService {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        p_user_id: toUserId(userId),
+        p_user_id: internalUserId,
       }),
     });
 
@@ -181,7 +183,15 @@ export const createQuotaService = (options: QuotaServiceOptions = {}): QuotaServ
   const serviceRoleKey = options.serviceRoleKey ?? readEnv("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  return new QuotaService(supabaseUrl, serviceRoleKey, fetchImpl);
+  const userIdentity =
+    options.userIdentity ??
+    createUserIdentityService({
+      supabaseUrl,
+      serviceRoleKey,
+      fetchImpl,
+    });
+
+  return new QuotaService(supabaseUrl, serviceRoleKey, fetchImpl, userIdentity);
 };
 
 export const quotaService = createQuotaService();
